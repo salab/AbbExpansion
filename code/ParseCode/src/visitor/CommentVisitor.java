@@ -29,7 +29,7 @@ public class CommentVisitor extends ASTVisitor {
         int endLineNumber = compilationUnit.getLineNumber(node.getStartPosition() + node.getLength());
         
     	CommentInfo comment = new CommentInfo(startLineNumber, endLineNumber, node.toString());
-        globalVariables.relationBases.add(comment);
+        globalVariables.infos.add(comment);
     	return super.visit(node);
     }
     
@@ -39,7 +39,7 @@ public class CommentVisitor extends ASTVisitor {
         String content = source[startLineNumber-1].trim();
         content = content.substring(content.indexOf("//"));
         CommentInfo comment = new CommentInfo(startLineNumber, startLineNumber, content);
-        globalVariables.relationBases.add(comment);
+        globalVariables.infos.add(comment);
         return true;
     }
     
@@ -57,7 +57,7 @@ public class CommentVisitor extends ASTVisitor {
             }
         }
         CommentInfo comment = new CommentInfo(startLineNumber, endLineNumber, blockComment.toString());
-        globalVariables.relationBases.add(comment);
+        globalVariables.infos.add(comment);
         return true;
     }
 }

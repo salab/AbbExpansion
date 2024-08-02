@@ -13,7 +13,6 @@ public class FileVistor extends ASTVisitor {
 		
 		String temp = Config.projectName.replaceAll(",", "_");
 		id = id.replaceAll(",", "_");
-		Util.appendFile(temp + "," + id + "\n");
 
 		return super.visit(node);
 	}

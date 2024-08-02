@@ -12,7 +12,6 @@ public class NameVistor extends ASTVisitor {
 		String name = node.resolveBinding().getName().toString();
 		id = id.replaceAll(",", "_");
 		name = name.replaceAll(",", "_");
-		Util.appendFile(id + "," + name + "\n");
 		return super.visit(node);
 	}
 }

@@ -1,34 +1,25 @@
 package expansion;
 
-import java.util.HashSet;
+import java.util.Arrays;
+import java.util.List;
 
 /**
  * Expansions for an identifier
  */
-public class ClassNameExpansions {
-	public HashSet<String> subclass;
-	public HashSet<String> subsubclass;
-	public HashSet<String> parents;
-	public HashSet<String> ancestor;
-	public HashSet<String> methods;
-	public HashSet<String> fields;
-	public HashSet<String> comment;
+public class ClassNameExpansions extends Expansions {
+	private static List<String> key = Arrays.asList("subclass", "descendant", "parent", "ancestor", "method", "field", "type", "comment");
 
 	public ClassNameExpansions() {
 		super();
-		this.subclass = new HashSet<>();
-		this.subsubclass = new HashSet<>();
-		this.parents = new HashSet<>();
-		this.ancestor = new HashSet<>();
-		this.methods = new HashSet<>();
-		this.fields = new HashSet<>();
-		this.comment = new HashSet<>();
 	}
 
 	@Override
-	public String toString() {
-		return "ClassNameExpansions [subclass=" + subclass + ", subsubclass=" + subsubclass + ", parents=" + parents
-				+ ", ancestor=" + ancestor + ", methods=" + methods + ", fields=" + fields + ", comment=" + comment
-				+ "]";
-	}	
+	protected void setType() {
+		type = "ClassName";
+	}
+
+	@Override
+	protected void setKey() {
+		expansionKey = key;
+	}
 }

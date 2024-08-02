@@ -1,6 +1,6 @@
 package relation;
 
-public class CommentInfo extends RelationBase {
+public class CommentInfo extends Info {
 	public int startLine;
 	public String content;
 	public CommentInfo(int startLine, int line, String content) {

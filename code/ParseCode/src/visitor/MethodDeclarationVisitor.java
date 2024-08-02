@@ -2,11 +2,7 @@ package visitor;
 
 import java.util.ArrayList;
 
-import org.eclipse.jdt.core.dom.ASTVisitor;
-import org.eclipse.jdt.core.dom.CompilationUnit;
-import org.eclipse.jdt.core.dom.Javadoc;
-import org.eclipse.jdt.core.dom.MethodDeclaration;
-import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
+import org.eclipse.jdt.core.dom.*;
 
 import entity.ClassName;
 import entity.Identifier;
@@ -14,15 +10,16 @@ import entity.MethodName;
 import entity.Parameter;
 import menuHandles.HandleOneFile;
 import relation.MethodDeclarationInfo;
+import relation.ParameterInfo;
 
 public class MethodDeclarationVisitor extends ASTVisitor{
 	private CompilationUnit compilationUnit;
-	private HandleOneFile globalVariables;
+	private HandleOneFile handler;
 
-	public MethodDeclarationVisitor(CompilationUnit compilationUnit, HandleOneFile globalVariables) {
+	public MethodDeclarationVisitor(CompilationUnit compilationUnit, HandleOneFile handler) {
 		super();
 		this.compilationUnit = compilationUnit;
-		this.globalVariables = globalVariables;
+		this.handler = handler;
 
 	}
 
@@ -30,7 +27,7 @@ public class MethodDeclarationVisitor extends ASTVisitor{
 	public boolean visit(MethodDeclaration node) {
 		MethodDeclarationInfo methodDeclarationInfo = getMethodDeclarationInfo(node, compilationUnit);
 		if (methodDeclarationInfo != null) {
-			globalVariables.relationBases.add(methodDeclarationInfo);
+			handler.infos.add(methodDeclarationInfo);
 		}
 		return super.visit(node);
 	}
@@ -43,39 +40,40 @@ public class MethodDeclarationVisitor extends ASTVisitor{
 		
 		
 		if (node.resolveBinding() == null) {
-			System.err.println(node.toString());
 			return null;
 		}
 		// method name
-		String id = node.resolveBinding().getKey();
+		IMethodBinding binding = node.resolveBinding();
+		String id = binding.getKey();
 		String name = node.getName().toString();
 		MethodName methodName;
 		if (!node.isConstructor()) {
-			if (node.getReturnType2().resolveBinding() == null) {
-				System.err.println(node.toString());
+			ITypeBinding returnTypeBinding = binding.getReturnType();
+			if (returnTypeBinding == null) {
 				return null;
 			}
-			String typeid = node.getReturnType2().resolveBinding().getKey();
-			String typename = node.getReturnType2().resolveBinding().getName().toString();
+			String typeid = returnTypeBinding.getKey();
+			String typename = returnTypeBinding.getName();
 			ClassName className = new ClassName(typeid, typename);
 			methodName = new MethodName(id, name, className);
 		} else {
 			methodName = new MethodName(id, name, null);
 		}
 
-		// parameters
-		ArrayList<Parameter> parameters = new ArrayList<>();
+		ArrayList<ParameterInfo> parameters = new ArrayList<>();
 		for (Object object : node.parameters()) {
 			SingleVariableDeclaration svd = (SingleVariableDeclaration) object;
-			String id2 = svd.resolveBinding().getKey();;
+			IVariableBinding variableBinding = svd.resolveBinding();
+			String id2 = variableBinding.getKey();;
 			String name2 = svd.getName().toString();
-			if (svd.getType().resolveBinding() == null) {
-				System.err.println(node.toString());
+			ITypeBinding typeBinding = svd.getType().resolveBinding();
+			if (typeBinding == null) {
 				return null;
 			}
-			Parameter parameter = new Parameter(id2, name2, new ClassName(svd.getType().resolveBinding().getKey(),
-					svd.getType().resolveBinding().getName().toString()));
-			parameters.add(parameter);
+			int parameterLine = compilationUnit.getLineNumber(svd.getStartPosition());
+			Parameter parameter = new Parameter(id2, name2, new ClassName(typeBinding.getKey(),
+					typeBinding.getName()));
+			parameters.add(new ParameterInfo(parameterLine, parameter));
 		}
 
 		// get line number
@@ -87,7 +85,6 @@ public class MethodDeclarationVisitor extends ASTVisitor{
 			line = compilationUnit.getLineNumber(node.getStartPosition()+javaDoc.getLength())+1;
 		}
 
-		MethodDeclarationInfo methodDeclarationInfo = new MethodDeclarationInfo(line, methodName, parameters, identifiers);
-		return methodDeclarationInfo;
+		return new MethodDeclarationInfo(line, methodName, parameters, identifiers);
 	}
 }

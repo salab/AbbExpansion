@@ -1,38 +1,26 @@
 package expansion;
 
-import java.util.HashSet;
+import java.util.Arrays;
+import java.util.List;
 
 /**
  * Expansions for an identifier
  */
-public class MethodNameExpansions {
-	public HashSet<String> type;
-	public HashSet<String> comment;
-	public HashSet<String> enclosingClass;
-	public HashSet<String> parameter;
-	public HashSet<String> assignment;
-	public HashSet<String> parameterArgument;
-	public HashSet<String> methodInvocated;
+public class MethodNameExpansions extends Expansions {
+	private static List<String> key = Arrays.asList("type", "sibling-members", "comment", "enclosingClass", "parameter", "assignmentEquation", "argumentToParameter", "pass");
 
 
 	public MethodNameExpansions() {
 		super();
-		this.type = new HashSet<>();
-		this.comment = new HashSet<>();
-		this.enclosingClass = new HashSet<>();
-		this.parameter = new HashSet<>();
-		this.assignment = new HashSet<>();
-		this.parameterArgument = new HashSet<>();
-		this.methodInvocated = new HashSet<>();
 	}
 
+	@Override
+	protected void setType() {
+		type = "MethodName";
+	}
 
 	@Override
-	public String toString() {
-		return "MethodNameExpansions [type=" + type + ", comment=" + comment + ", enclosingClass=" + enclosingClass
-				+ ", parameter=" + parameter + ", assignment=" + assignment + ", parameterArgument=" + parameterArgument
-				+ ", methodInvocated=" + methodInvocated + "]";
-	}	
-	
-	
+	protected void setKey() {
+		expansionKey = key;
+	}
 }

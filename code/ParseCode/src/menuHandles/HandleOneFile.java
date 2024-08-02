@@ -2,40 +2,30 @@ package menuHandles;
 
 import java.util.ArrayList;
 
-import entity.Argument;
-import entity.ClassName;
-import entity.Field;
-import entity.Identifier;
-import entity.MethodName;
-import entity.Parameter;
-import entity.Variable;
+import entity.*;
 import expansion.AllExpansions;
-import relation.AssignInfo;
-import relation.ClassInfo;
-import relation.CommentInfo;
-import relation.MethodDeclarationInfo;
-import relation.MethodInvocationInfo;
-import relation.RelationBase;
+import relation.*;
 import util.Config;
 import util.Util;
 
 public class HandleOneFile {
 	// relationBase that are selected from visitors in Package visitor
-	public ArrayList<RelationBase> relationBases = new ArrayList<>();
+	public ArrayList<Info> infos = new ArrayList<>();
 
 	public void parse() {
-		for (int i = 0; i < relationBases.size(); i++) {
-			RelationBase relationBase = relationBases.get(i);
-			if (relationBase instanceof AssignInfo) {
-				handleAssign((AssignInfo)relationBase);
-			} else if (relationBase instanceof ClassInfo) {
-				handleExtend((ClassInfo)relationBase);
-			} else if (relationBase instanceof MethodDeclarationInfo) {
-				handleMethodDeclaration((MethodDeclarationInfo)relationBase);
-			} else if (relationBase instanceof MethodInvocationInfo) {
-				handleMethodInvocation((MethodInvocationInfo)relationBase);
-			} else if (relationBase instanceof CommentInfo) {
-				handleComment((CommentInfo)relationBase);
+		for (Info info : infos) {
+			if (info instanceof AssignInfo a) {
+				handleAssign(a);
+			} else if (info instanceof ClassInfo c) {
+				handleExtend(c);
+			} else if (info instanceof MethodDeclarationInfo m) {
+				handleMethodDeclaration(m);
+			} else if (info instanceof MethodInvocationInfo m) {
+				handleMethodInvocation(m);
+			} else if (info instanceof VariableInfo v) {
+				handleVariable(v);
+			} else if (info instanceof CommentInfo c) {
+				handleComment(c);
 			}
 		}
 	}
@@ -46,26 +36,26 @@ public class HandleOneFile {
 
 		boolean currentLine = true;
 		// comment in current line
-		for (int i = 0; i < relationBases.size(); i++) {
-			if (relationBases.get(i).line == startLine && relationBases.get(i) != commentInfo) {
+		for (int i = 0; i < infos.size(); i++) {
+			if (infos.get(i).line == startLine && infos.get(i) != commentInfo) {
 				currentLine = false;
-				handleRelationBaseAndCommentInfo(relationBases.get(i), commentInfo);
+				handleRelationBaseAndCommentInfo(infos.get(i), commentInfo);
 			}
 		}
 		if (currentLine == false) {
 			return;
 		}
 		// comment in previous line
-		for (int i = 0; i < relationBases.size(); i++) {
-			if (relationBases.get(i).line == (endLine + 1)) {
-				handleRelationBaseAndCommentInfo(relationBases.get(i), commentInfo);
+		for (int i = 0; i < infos.size(); i++) {
+			if (infos.get(i).line == (endLine + 1)) {
+				handleRelationBaseAndCommentInfo(infos.get(i), commentInfo);
 			}
 		}
 	}
 
-	private void handleRelationBaseAndCommentInfo(RelationBase relationBase, CommentInfo commentInfo) {
-		if (relationBase instanceof AssignInfo) {
-			AssignInfo assignInfo = (AssignInfo) relationBase;
+	private void handleRelationBaseAndCommentInfo(Info info, CommentInfo commentInfo) {
+		if (info instanceof AssignInfo) {
+			AssignInfo assignInfo = (AssignInfo) info;
 			ArrayList<Identifier> left = assignInfo.left;
 			ArrayList<Identifier> right = assignInfo.right;
 			for (int i = 0; i < left.size(); i++) {
@@ -76,8 +66,8 @@ public class HandleOneFile {
 					Util.putHashSet(AllExpansions.idToComments, right.get(i).id, commentInfo.content);
 				}
 			}
-		} else if (relationBase instanceof ClassInfo) {
-			ClassInfo extendInfo = (ClassInfo) relationBase;
+		} else if (info instanceof ClassInfo) {
+			ClassInfo extendInfo = (ClassInfo) info;
 			ClassName className = extendInfo.className;
 			Util.putHashSet(AllExpansions.idToComments, className.id, commentInfo.content);
 
@@ -85,8 +75,8 @@ public class HandleOneFile {
 			for (int j = 0; j < classNames.size(); j++) {
 				Util.putHashSet(AllExpansions.idToComments, classNames.get(j).id, commentInfo.content);
 			}
-		} else if (relationBase instanceof MethodDeclarationInfo) {
-			MethodDeclarationInfo methodDeclarationInfo = (MethodDeclarationInfo) relationBase;
+		} else if (info instanceof MethodDeclarationInfo) {
+			MethodDeclarationInfo methodDeclarationInfo = (MethodDeclarationInfo) info;
 			Util.putHashSet(AllExpansions.idToComments, methodDeclarationInfo.methodName.id, commentInfo.content);
 
 			for (int j = 0; j < methodDeclarationInfo.parameters.size(); j++) {
@@ -94,13 +84,13 @@ public class HandleOneFile {
 			}
 
 			// not constructor
-			if (methodDeclarationInfo.methodName.type != null) {
-				Util.putHashSet(AllExpansions.idToComments, methodDeclarationInfo.methodName.type.id, commentInfo.content);
+			if (methodDeclarationInfo.methodName.typeClass != null) {
+				Util.putHashSet(AllExpansions.idToComments, methodDeclarationInfo.methodName.typeClass.id, commentInfo.content);
 			}
 
-		} else if (relationBase instanceof MethodInvocationInfo) {
-			MethodInvocationInfo methodInvocationInfo = (MethodInvocationInfo) relationBase;
-			Util.putHashSet(AllExpansions.idToComments, methodInvocationInfo.methodName.type.id, commentInfo.content);
+		} else if (info instanceof MethodInvocationInfo) {
+			MethodInvocationInfo methodInvocationInfo = (MethodInvocationInfo) info;
+			Util.putHashSet(AllExpansions.idToComments, methodInvocationInfo.methodName.typeClass.id, commentInfo.content);
 
 			for (int j = 0; j < methodInvocationInfo.arguments.size(); j++) {
 				Argument argument = methodInvocationInfo.arguments.get(j);
@@ -113,47 +103,20 @@ public class HandleOneFile {
 
 	private void handleMethodInvocation(MethodInvocationInfo methodInvocationInfo) {
 
-		Util.putHashSet(AllExpansions.idToFiles, methodInvocationInfo.methodName.id, Config.projectName);
 		AllExpansions.idToMethodName.put(methodInvocationInfo.methodName.id, methodInvocationInfo.methodName);
-		
-		Util.putHashSet(AllExpansions.idToFiles, methodInvocationInfo.methodName.type.id, Config.projectName);
-		AllExpansions.idToClassName.put(methodInvocationInfo.methodName.type.id, methodInvocationInfo.methodName.type);	
+		AllExpansions.idToClassName.put(methodInvocationInfo.methodName.typeClass.id, methodInvocationInfo.methodName.typeClass);
 
 		ArrayList<Argument> arguments = methodInvocationInfo.arguments;
 		for (Argument argument : arguments) {
 			ClassName type = argument.type;
 			
-			Util.putHashSet(AllExpansions.idToFiles, type.id, Config.projectName);
-			AllExpansions.idToClassName.put(type.id, type);	
+			AllExpansions.idToClassName.put(type.id, type);
 
 			ArrayList<Identifier> identifiers = argument.identifiers;
 			
 			for (Identifier identifier : identifiers) {
-				Util.putHashSet(AllExpansions.idToFiles, identifier.id, Config.projectName);
 				AllExpansions.idToIdentifier.put(identifier.id, identifier);
-
-				if (identifier instanceof Parameter) {
-					Parameter parameter = (Parameter) identifier;
-					Util.putHashSet(AllExpansions.idToFiles, parameter.type.id, Config.projectName);
-					AllExpansions.idToClassName.put(parameter.type.id, parameter.type);
-
-				} else if (identifier instanceof Field) {
-					Field parameter = (Field) identifier;
-					Util.putHashSet(AllExpansions.idToFiles, parameter.type.id, Config.projectName);
-					AllExpansions.idToClassName.put(parameter.type.id, parameter.type);
-
-				} else if (identifier instanceof Variable) {
-					Variable parameter = (Variable) identifier;
-					Util.putHashSet(AllExpansions.idToFiles, parameter.type.id, Config.projectName);
-					AllExpansions.idToClassName.put(parameter.type.id, parameter.type);
-
-				} else if (identifier instanceof MethodName) {
-					MethodName parameter = (MethodName) identifier;
-					if (parameter.type != null) {
-						Util.putHashSet(AllExpansions.idToFiles, parameter.type.id, Config.projectName);
-						AllExpansions.idToClassName.put(parameter.type.id, parameter.type);
-					}
-				}
+				handleType(identifier);
 			}
 		}
 		
@@ -162,119 +125,70 @@ public class HandleOneFile {
 
 	private void handleMethodDeclaration(MethodDeclarationInfo methodDeclarationInfo) {
 		AllExpansions.methodDeclarationInfos.add(methodDeclarationInfo);
-		Util.putHashSet(AllExpansions.idToFiles, methodDeclarationInfo.methodName.id, Config.projectName);
+		AllExpansions.idToDeclarationInfo.put(methodDeclarationInfo.methodName.id, methodDeclarationInfo);
+
+		AllExpansions.idToFile.put(methodDeclarationInfo.methodName.id, Config.projectName);
 		AllExpansions.idToMethodName.put(methodDeclarationInfo.methodName.id, methodDeclarationInfo.methodName);
 
-		if (methodDeclarationInfo.methodName.type != null) {
-			Util.putHashSet(AllExpansions.idToFiles, methodDeclarationInfo.methodName.type.id, Config.projectName);
-			AllExpansions.idToClassName.put(methodDeclarationInfo.methodName.type.id, methodDeclarationInfo.methodName.type);	
+		if (methodDeclarationInfo.methodName.typeClass != null) {
+			AllExpansions.idToClassName.put(methodDeclarationInfo.methodName.typeClass.id, methodDeclarationInfo.methodName.typeClass);
 		}
 
 		ArrayList<Parameter> parameters = methodDeclarationInfo.parameters;
-		for (int i = 0; i < parameters.size(); i++) {
-			Util.putHashSet(AllExpansions.idToFiles, parameters.get(i).id, Config.projectName);
-			AllExpansions.idToParameter.put(parameters.get(i).id, parameters.get(i));	
+		for (Parameter value : parameters) {
+			AllExpansions.idToFile.put(value.id, Config.projectName);
+			AllExpansions.idToParameter.put(value.id, value);
 
-			Util.putHashSet(AllExpansions.idToFiles, parameters.get(i).type.id, Config.projectName);
-			AllExpansions.idToClassName.put(parameters.get(i).type.id, parameters.get(i).type);
+			AllExpansions.idToClassName.put(value.typeClass.id, value.typeClass);
 		}
-		
+		methodDeclarationInfo.parameterInfos.forEach(info -> AllExpansions.idToDeclarationInfo.put(info.parameter.id, info));
+
 		ArrayList<Identifier> identifiers = methodDeclarationInfo.identifiers;
 		
 		for (Identifier identifier : identifiers) {
-			Util.putHashSet(AllExpansions.idToFiles, identifier.id, Config.projectName);
 			AllExpansions.idToIdentifier.put(identifier.id, identifier);
-
-			if (identifier instanceof Parameter) {
-				Parameter parameter = (Parameter) identifier;
-				Util.putHashSet(AllExpansions.idToFiles, parameter.type.id, Config.projectName);
-				AllExpansions.idToClassName.put(parameter.type.id, parameter.type);
-
-			} else if (identifier instanceof Field) {
-				Field parameter = (Field) identifier;
-				Util.putHashSet(AllExpansions.idToFiles, parameter.type.id, Config.projectName);
-				AllExpansions.idToClassName.put(parameter.type.id, parameter.type);
-
-			} else if (identifier instanceof Variable) {
-				Variable parameter = (Variable) identifier;
-				Util.putHashSet(AllExpansions.idToFiles, parameter.type.id, Config.projectName);
-				AllExpansions.idToClassName.put(parameter.type.id, parameter.type);
-
-			} else if (identifier instanceof MethodName) {
-				MethodName parameter = (MethodName) identifier;
-				if (parameter.type != null) {
-					Util.putHashSet(AllExpansions.idToFiles, parameter.type.id, Config.projectName);
-					AllExpansions.idToClassName.put(parameter.type.id, parameter.type);
-				}
-			}
+			handleType(identifier);
 		}
 		
 	}
 
 	private void handleExtend(ClassInfo classInfo) {
 		AllExpansions.classInfos.add(classInfo);
+		AllExpansions.idToDeclarationInfo.put(classInfo.className.id, classInfo);
 
 		ClassName className = classInfo.className;
-		Util.putHashSet(AllExpansions.idToFiles, className.id, Config.projectName);
+		AllExpansions.idToFile.put(className.id, Config.projectName);
 		AllExpansions.idToClassName.put(className.id, className);
 
 		ArrayList<ClassName> classNames = classInfo.expans;
-		for (int i = 0; i < classNames.size(); i++) {
-			Util.putHashSet(AllExpansions.idToFiles, classNames.get(i).id, Config.projectName);
-			AllExpansions.idToClassName.put(classNames.get(i).id, classNames.get(i));
-			Util.put(AllExpansions.childToParent, className.id, classNames.get(i).id);
-			Util.put(AllExpansions.parentToChild, classNames.get(i).id, className.id);
+		for (ClassName name : classNames) {
+			AllExpansions.idToClassName.put(name.id, name);
+			Util.put(AllExpansions.childToParent, className.id, name.id);
+			Util.put(AllExpansions.parentToChild, name.id, className.id);
 		}
 
 		ArrayList<Field> fields = classInfo.fields;
-		for (int i = 0; i < fields.size(); i++) {
-			Field field = fields.get(i);
-			Util.putHashSet(AllExpansions.idToFiles, field.id, Config.projectName);
+		for (Field field : fields) {
+			AllExpansions.idToFile.put(field.id, Config.projectName);
 			AllExpansions.idToField.put(field.id, field);
 
-			Util.putHashSet(AllExpansions.idToFiles, field.type.id, Config.projectName);
-			AllExpansions.idToClassName.put(field.type.id, field.type);
+			AllExpansions.idToClassName.put(field.typeClass.id, field.typeClass);
 		}
+		classInfo.fieldInfos.forEach(info -> AllExpansions.idToDeclarationInfo.put(info.field.id, info));
 		
 		ArrayList<MethodName> methodNames = classInfo.methodNames;
-		for (int i = 0; i < methodNames.size(); i++) {
-			MethodName methodName = methodNames.get(i);
-			Util.putHashSet(AllExpansions.idToFiles, methodName.id, Config.projectName);
+		for (MethodName methodName : methodNames) {
 			AllExpansions.idToMethodName.put(methodName.id, methodName);
 
-			if (methodName.type != null) {
-				Util.putHashSet(AllExpansions.idToFiles, methodName.type.id, Config.projectName);
-				AllExpansions.idToClassName.put(methodName.type.id, methodName.type);	
+			if (methodName.typeClass != null) {
+				AllExpansions.idToClassName.put(methodName.typeClass.id, methodName.typeClass);
 			}
 		}
 		ArrayList<Identifier> identifiers = classInfo.identifiers;
 		
 		for (Identifier identifier : identifiers) {
-			Util.putHashSet(AllExpansions.idToFiles, identifier.id, Config.projectName);
 			AllExpansions.idToIdentifier.put(identifier.id, identifier);
-
-			if (identifier instanceof Parameter) {
-				Parameter parameter = (Parameter) identifier;
-				Util.putHashSet(AllExpansions.idToFiles, parameter.type.id, Config.projectName);
-				AllExpansions.idToClassName.put(parameter.type.id, parameter.type);
-
-			} else if (identifier instanceof Field) {
-				Field parameter = (Field) identifier;
-				Util.putHashSet(AllExpansions.idToFiles, parameter.type.id, Config.projectName);
-				AllExpansions.idToClassName.put(parameter.type.id, parameter.type);
-
-			} else if (identifier instanceof Variable) {
-				Variable parameter = (Variable) identifier;
-				Util.putHashSet(AllExpansions.idToFiles, parameter.type.id, Config.projectName);
-				AllExpansions.idToClassName.put(parameter.type.id, parameter.type);
-
-			} else if (identifier instanceof MethodName) {
-				MethodName parameter = (MethodName) identifier;
-				if (parameter.type != null) {
-					Util.putHashSet(AllExpansions.idToFiles, parameter.type.id, Config.projectName);
-					AllExpansions.idToClassName.put(parameter.type.id, parameter.type);
-				}
-			}
+			handleType(identifier);
 		}
 	}
 
@@ -283,63 +197,27 @@ public class HandleOneFile {
 
 		ArrayList<Identifier> left = assignInfo.left;
 		ArrayList<Identifier> right = assignInfo.right;
-		for (int i = 0; i < left.size(); i++) {
-			Util.putHashSet(AllExpansions.idToFiles, left.get(i).id, Config.projectName);
-			AllExpansions.idToIdentifier.put(left.get(i).id, left.get(i));
-
-			Identifier identifier = left.get(i);
-			if (identifier instanceof Parameter) {
-				Parameter parameter = (Parameter) identifier;
-				Util.putHashSet(AllExpansions.idToFiles, parameter.type.id, Config.projectName);
-				AllExpansions.idToClassName.put(parameter.type.id, parameter.type);
-
-			} else if (identifier instanceof Field) {
-				Field parameter = (Field) identifier;
-				Util.putHashSet(AllExpansions.idToFiles, parameter.type.id, Config.projectName);
-				AllExpansions.idToClassName.put(parameter.type.id, parameter.type);
-
-			} else if (identifier instanceof Variable) {
-				Variable parameter = (Variable) identifier;
-				Util.putHashSet(AllExpansions.idToFiles, parameter.type.id, Config.projectName);
-				AllExpansions.idToClassName.put(parameter.type.id, parameter.type);
-
-			} else if (identifier instanceof MethodName) {
-				MethodName parameter = (MethodName) identifier;
-				if (parameter.type != null) {
-					Util.putHashSet(AllExpansions.idToFiles, parameter.type.id, Config.projectName);
-					AllExpansions.idToClassName.put(parameter.type.id, parameter.type);
-				}
-			}
+		for (Identifier identifier : left) {
+			AllExpansions.idToIdentifier.put(identifier.id, identifier);
+			handleType(identifier);
 		}
 		if (right != null) {
-			for (int i = 0; i < right.size(); i++) {
-				Util.putHashSet(AllExpansions.idToFiles, right.get(i).id, Config.projectName);
-				AllExpansions.idToIdentifier.put(right.get(i).id, right.get(i));
-
-				Identifier identifier = right.get(i);
-				if (identifier instanceof Parameter) {
-					Parameter parameter = (Parameter) identifier;
-					Util.putHashSet(AllExpansions.idToFiles, parameter.type.id, Config.projectName);
-					AllExpansions.idToClassName.put(parameter.type.id, parameter.type);
-
-				} else if (identifier instanceof Field) {
-					Field parameter = (Field) identifier;
-					Util.putHashSet(AllExpansions.idToFiles, parameter.type.id, Config.projectName);
-					AllExpansions.idToClassName.put(parameter.type.id, parameter.type);
-
-				} else if (identifier instanceof Variable) {
-					Variable parameter = (Variable) identifier;
-					Util.putHashSet(AllExpansions.idToFiles, parameter.type.id, Config.projectName);
-					AllExpansions.idToClassName.put(parameter.type.id, parameter.type);
-
-				} else if (identifier instanceof MethodName) {
-					MethodName parameter = (MethodName) identifier;
-					if (parameter.type != null) {
-						Util.putHashSet(AllExpansions.idToFiles, parameter.type.id, Config.projectName);
-						AllExpansions.idToClassName.put(parameter.type.id, parameter.type);
-					}
-				}
+			for (Identifier identifier : right) {
+				AllExpansions.idToIdentifier.put(identifier.id, identifier);
+				handleType(identifier);
 			}
+		}
+	}
+
+//	Just add to idToDeclarationInfo and idToFile
+	private void handleVariable(VariableInfo variableInfo) {
+		AllExpansions.idToDeclarationInfo.put(variableInfo.variable.id, variableInfo);
+		AllExpansions.idToFile.put(variableInfo.variable.id, Config.projectName);
+	}
+
+	private void handleType(Identifier identifier) {
+		if (identifier instanceof TypedIdentifier typedIdentifier) {
+			AllExpansions.idToClassName.put(typedIdentifier.typeClass.id, typedIdentifier.typeClass);
 		}
 	}
 }

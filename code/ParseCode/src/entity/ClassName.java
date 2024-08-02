@@ -12,4 +12,9 @@ public class ClassName extends Identifier {
 	public String toString() {
 		return "ClassName [id=" + id + ", name=" + name + "]";
 	}
+
+	@Override
+	protected void setType() {
+		type = "ClassName";
+	}
 }

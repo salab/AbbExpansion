@@ -2,10 +2,7 @@ package visitor;
 
 import java.util.ArrayList;
 
-import org.eclipse.jdt.core.dom.ASTVisitor;
-import org.eclipse.jdt.core.dom.CompilationUnit;
-import org.eclipse.jdt.core.dom.Expression;
-import org.eclipse.jdt.core.dom.MethodInvocation;
+import org.eclipse.jdt.core.dom.*;
 
 import entity.Argument;
 import entity.ClassName;
@@ -24,23 +21,22 @@ public class MethodInvocationVisitor extends ASTVisitor{
 		super();
 		this.compilationUnit = compilationUnit;
 		this.globalVariables = globalVariables;
-
 	}
 
 	@Override
 	public boolean visit(MethodInvocation node) {
-		if (node.resolveMethodBinding() == null) {
-			System.err.println(node.toString());
+		IMethodBinding methodBinding = node.resolveMethodBinding();
+		if (methodBinding == null) {
 			return super.visit(node);
 		}
-		String id = node.resolveMethodBinding().getKey();
+		String id = methodBinding.getKey();
 		String name = node.getName().toString();
-		if (node.resolveTypeBinding() == null) {
-			System.err.println(node.toString());
+		ITypeBinding typeBinding = node.resolveTypeBinding();
+		if (typeBinding == null) {
 			return super.visit(node);
 		}
-		ClassName className = new ClassName(node.resolveTypeBinding().getKey(), 
-				node.resolveTypeBinding().getName().toString());
+		ClassName className = new ClassName(typeBinding.getKey(),
+				typeBinding.getName());
 		MethodName methodName = new MethodName(id, name, className);
 
 		// arguments
@@ -49,12 +45,12 @@ public class MethodInvocationVisitor extends ASTVisitor{
 			for (Object object : node.arguments()) {
 				Expression expression = (Expression) object;
 				ArrayList<Identifier> identifiers = Util.parseExpression(expression);
-				if (expression.resolveTypeBinding() == null) {
-					System.err.println(node.toString());
+				ITypeBinding expressionBinding = expression.resolveTypeBinding();
+				if (expressionBinding == null) {
 					return super.visit(node);
 				}
-				Argument argument = new Argument(new ClassName(expression.resolveTypeBinding().getKey(), 
-						expression.resolveTypeBinding().getName().toString()), identifiers);
+				Argument argument = new Argument(new ClassName(expressionBinding.getKey(),
+						expressionBinding.getName()), identifiers);
 				arguments.add(argument);
 			}
 		} catch (Exception e) {
@@ -62,8 +58,8 @@ public class MethodInvocationVisitor extends ASTVisitor{
 		}
 
 		int line = compilationUnit.getLineNumber(node.getStartPosition());
-		MethodInvocationInfo methodInvocationInfo = new MethodInvocationInfo(line, methodName,arguments);
-		globalVariables.relationBases.add(methodInvocationInfo);
+		MethodInvocationInfo methodInvocationInfo = new MethodInvocationInfo(line, methodName, arguments);
+		globalVariables.infos.add(methodInvocationInfo);
 		return super.visit(node);
 	}
 }

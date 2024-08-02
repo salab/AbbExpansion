@@ -1,20 +1,10 @@
 package expansion;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
+import java.lang.reflect.Type;
+import java.util.*;
 
-import entity.Argument;
-import entity.ClassName;
-import entity.Field;
-import entity.Identifier;
-import entity.MethodName;
-import entity.Parameter;
-import entity.Variable;
-import relation.AssignInfo;
-import relation.ClassInfo;
-import relation.MethodDeclarationInfo;
-import relation.MethodInvocationInfo;
+import entity.*;
+import relation.*;
 import util.Util;
 
 public class AllExpansions {
@@ -27,7 +17,7 @@ public class AllExpansions {
 	// type to ding	
 	public static HashMap<String, Identifier> idToIdentifier = new HashMap<>();
 
-	public static HashMap<String, HashSet<String>> idToFiles = new HashMap<>();
+	public static HashMap<String, String> idToFile = new HashMap<>();
 
 
 	public static HashMap<String, ArrayList<String>> childToParent = new HashMap<>();
@@ -39,28 +29,59 @@ public class AllExpansions {
 	public static ArrayList<ClassInfo> classInfos = new ArrayList<>();
 	public static HashMap<String, HashSet<String>> idToComments = new HashMap<>();
 
+//	introduced by shklan
+	public static HashMap<String, Info> idToDeclarationInfo = new HashMap<>();
+	public static HashMap<String, Expansions> idToExpansions = new HashMap<>();
+	private static HashMap<String, LocatedIdentifier> idToLocatedIdentifier = new HashMap<>();
+	private static List<String> expansions = Arrays.asList(
+			"subclass",
+			"descendant",
+			"parent",
+			"ancestor",
+			"method",
+			"field",
+			"sibling-members",
+			"comment",
+			"type",
+			"enclosingClass",
+			"assignmentEquation",
+			"pass",
+			"argumentToParameter",
+			"parameter",
+			"enclosingMethod",
+			"parameterToArgument"
+	);
+//
 
-	public static HashMap<String, ClassNameExpansions> idToClassNameExpansions = new HashMap<>();
-	public static HashMap<String, FieldNameExpansions> idToFieldNameExpansions = new HashMap<>();
-	public static HashMap<String, MethodNameExpansions> idToMethodNameExpansions = new HashMap<>();
-	public static HashMap<String, ParameterNameExpansions> idToParameterNameExpansions = new HashMap<>();
-	public static HashMap<String, VariableNameExpansions> idToVariableNameExpansions = new HashMap<>();
+	public static void postprocess() {
+		handleFieldParameterVariable();
+		locateIdentifiers();
+
+		handleAssign();
+		handleMethodInvocation();
+		handleComment();
+
+		handleExtend();
+		handleMethodDeclaration();
+		handleExpansionType();
+
+		toFile();
+	}
 
 	private static void handleMethodDeclaration() {
 		for (MethodDeclarationInfo methodDeclarationInfo : methodDeclarationInfos) {
 			ArrayList<Parameter> parameters = methodDeclarationInfo.parameters;
-			for (int i = 0; i < parameters.size(); i++) {
+			for (Parameter parameter : parameters) {
 				// method name --> parameter
-				AllExpansions.addExpansion(methodDeclarationInfo.methodName, parameters.get(i), "MethodName", "parameter");
+				AllExpansions.addExpansion(methodDeclarationInfo.methodName.id, parameter.id, "MethodName", "parameter");
 				// parameter --> method name
-				AllExpansions.addExpansion(parameters.get(i), methodDeclarationInfo.methodName, "ParameterName", "enclosingMethod");
+				AllExpansions.addExpansion(parameter.id, methodDeclarationInfo.methodName.id, "ParameterName", "enclosingMethod");
 			}
 
 			ArrayList<Identifier> identifiers = methodDeclarationInfo.identifiers;
-			for (int i = 0; i < identifiers.size(); i++) {
-				Identifier identifier = identifiers.get(i);
+			for (Identifier identifier : identifiers) {
 				if (idToVariable.keySet().contains(identifier.id)) {
-					addExpansion(identifier, methodDeclarationInfo.methodName, "VariableName", "enclosingMethod");
+					addExpansion(identifier.id, methodDeclarationInfo.methodName.id, "VariableName", "enclosingMethod");
 				}
 			}
 		}
@@ -73,25 +94,35 @@ public class AllExpansions {
 			ClassName className = classInfo.className;
 
 			ArrayList<Field> fields = classInfo.fields;
-			for (int i = 0; i < fields.size(); i++) {
-				Field field = fields.get(i);
-
-				AllExpansions.addExpansion(className, field, "ClassName", "fields");
-				AllExpansions.addExpansion(field, className, "FieldName", "enclosingClass");
+			for (Field field : fields) {
+				AllExpansions.addExpansion(className.id, field.id, "ClassName", "field");
+				AllExpansions.addExpansion(field.id, className.id, "FieldName", "enclosingClass");
 			}
 			ArrayList<MethodName> methodNames = classInfo.methodNames;
-			for (int i = 0; i < methodNames.size(); i++) {
-				MethodName methodName = methodNames.get(i);
-				AllExpansions.addExpansion(className, methodName, "ClassName", "methods");
-				AllExpansions.addExpansion(methodName, className, "MethodName", "enclosingClass");
+			for (MethodName methodName : methodNames) {
+				AllExpansions.addExpansion(className.id, methodName.id, "ClassName", "method");
+				AllExpansions.addExpansion(methodName.id, className.id, "MethodName", "enclosingClass");
 			}
+			handleSiblings(methodNames, fields);
 
 			ArrayList<Identifier> identifiers = classInfo.identifiers;
-			for (int i = 0; i < identifiers.size(); i++) {
-				Identifier identifier = identifiers.get(i);
-				if (idToVariable.keySet().contains(identifier.id)) {
-					addExpansion(identifier, className, "VariableName", "enclosingClass");
+			for (Identifier identifier : identifiers) {
+				if (idToVariable.containsKey(identifier.id)) {
+					addExpansion(identifier.id, className.id, "VariableName", "enclosingClass");
 				}
+			}
+		}
+	}
+
+	private static void handleSiblings(ArrayList<MethodName> mList, ArrayList<Field> fList) {
+		ArrayList<TypedIdentifier> members = new ArrayList<>();
+		members.addAll(mList);
+		members.addAll(fList);
+		while(members.size() > 0) {
+			TypedIdentifier member = members.remove(members.size()-1);
+			for (TypedIdentifier sibling : members) {
+				addExpansion(member.id, sibling.id, member.type, "sibling-members");
+				addExpansion(sibling.id, member.id, member.type, "sibling-members");
 			}
 		}
 	}
@@ -102,24 +133,24 @@ public class AllExpansions {
 				ArrayList<String> parents = childToParent.get(id);
 				ArrayList<String> ancestor = new ArrayList<>();
 				if (parents != null) {
-					for (String string : parents) {
-						AllExpansions.addExpansion(idToClassName.get(id), idToClassName.get(string), "ClassName", "parents");
+					for (String pId : parents) {
+						AllExpansions.addExpansion(id, pId, "ClassName", "parent");
 					}
 					search(childToParent, ancestor, parents);
 				}
 				ArrayList<String> subclass = parentToChild.get(id);
-				ArrayList<String> subsubclass = new ArrayList<>();
+				ArrayList<String> descendant = new ArrayList<>();
 				if (subclass != null) {
-					for (String string : subclass) {
-						AllExpansions.addExpansion(idToClassName.get(id), idToClassName.get(string), "ClassName", "subclass");
+					for (String sId : subclass) {
+						AllExpansions.addExpansion(id, sId, "ClassName", "subclass");
 					}
-					search(parentToChild, subsubclass, subclass);
+					search(parentToChild, descendant, subclass);
 				}
-				for (String string : ancestor) {
-					AllExpansions.addExpansion(idToClassName.get(id), idToClassName.get(string), "ClassName", "ancestor");
+				for (String an : ancestor) {
+					AllExpansions.addExpansion(id, an, "ClassName", "ancestor");
 				}
-				for (String string : subsubclass) {
-					AllExpansions.addExpansion(idToClassName.get(id), idToClassName.get(string), "ClassName", "subsubclass");
+				for (String ssId : descendant) {
+					AllExpansions.addExpansion(id, ssId, "ClassName", "descendant");
 				}
 			}
 
@@ -128,8 +159,7 @@ public class AllExpansions {
 
 	public static void search(HashMap<String, ArrayList<String>> tree, ArrayList<String> ancestor, ArrayList<String> parents) {
 		ArrayList<String> temp = new ArrayList<>();
-		for (int i = 0; i < parents.size(); i++) {
-			String t = parents.get(i);
+		for (String t : parents) {
 			ArrayList<String> tt = tree.get(t);
 			if (tt == null) {
 				continue;
@@ -139,238 +169,117 @@ public class AllExpansions {
 		if (temp.size() == 0) {
 			return;
 		}
+//		ancestor <- parentsのすべての親クラス
 		ancestor.addAll(temp);
 		search(tree, ancestor, temp);
 	}
-	private static String printHashSet(HashSet<String> idSet) {
-		String result = "";
-		for (String id : idSet) {
-			if (idToClassName.keySet().contains(id)) {
-				Identifier identifier = idToClassName.get(id);
-				result += "ClassName:" + identifier.name + ";";
-			} else if (idToMethodName.keySet().contains(id)) {
-				Identifier identifier = idToMethodName.get(id);
-				result += "MethodName:" + identifier.name + ";";
-			} else if (idToField.keySet().contains(id)) {
-				Identifier identifier = idToField.get(id);
-				result += "FieldName:" + identifier.name + ";";
-			} else if (idToParameter.keySet().contains(id)) {
-				Identifier identifier = idToParameter.get(id);
-				result += "ParameterName:" + identifier.name + ";";
-			} else if (idToVariable.keySet().contains(id)) {
-				Identifier identifier = idToVariable.get(id);
-				result += "VariableName:" + identifier.name + ";";
-			} 
+
+	private static String printHashSet(HashSet<String> set) {
+		StringBuilder sb = new StringBuilder();
+		for (String id : set) {
+			if (idToLocatedIdentifier.containsKey(id)) {
+				LocatedIdentifier identifier = idToLocatedIdentifier.get(id);
+				sb.append(id)
+						.append(":")
+						.append(identifier.getName())
+						.append(" - ");
+			} else {
+				sb.append(printHashSetString(set));
+			}
 		}
-		return result;
+		return sb.toString();
 	}
 
 	private static String commaToOther(String str) {
-		return str.replaceAll(",", "_");
+		if (str == null) {
+			return null;
+		} else {
+			return str.replaceAll(",", "_");
+		}
+	}
+
+
+	private static void locateIdentifiers() {
+		idToIdentifier.putAll(idToClassName);
+		idToIdentifier.putAll(idToMethodName);
+		idToIdentifier.putAll(idToParameter);
+		idToIdentifier.putAll(idToField);
+		idToIdentifier.putAll(idToVariable);
+		for (String key : idToIdentifier.keySet()) {
+			Identifier identifier = idToIdentifier.get(key);
+			idToLocatedIdentifier.put(key, identifier.locate(idToDeclarationInfo));
+		}
 	}
 
 	private static void toFile() {
-		Util.appendFile(
-				"id,"
-						+ "files,"
-						+ "name,"
-						+ "typeOfIdentifier,"
-						+ "subclass,"
-						+ "subsubclass,"
-						+ "parents,"
-						+ "ancestor,"
-						+ "methods,"
-						+ "fields,"
-						+ "comment,"
-						+ "type,"
-						+ "enclosingClass,"
-						+ "assignment,"
-						+ "methodInvocated,"
-						+ "parameterArgument,"
-						+ "parameter,"
-						+ "enclosingMethod,"
-						+ "argument"
-						+ "\n");
+		StringBuilder sb = new StringBuilder();
+		sb.append("id,")
+				.append("files,")
+				.append("line,")
+				.append("name,")
+				.append("typeOfIdentifier,")
+				.append("subclass,")
+				.append("descendant,")
+				.append("parent,")
+				.append("ancestor,")
+				.append("method,")
+				.append("field,")
+				.append("sibling-members,")
+				.append("comment,")
+				.append("type,")
+				.append("enclosingClass,")
+				.append("assignmentEquation,")
+				.append("pass,")
+				.append("argumentToParameter,")
+				.append("parameter,")
+				.append("enclosingMethod,")
+				.append("parameterToArgument")
+				.append("\n");
 
-		for (String id: idToClassName.keySet()) {
-			if (!idToClassNameExpansions.keySet().contains(id)) {
-				Util.appendFile(commaToOther(id));
-				Util.appendFile("," + commaToOther(printHashSetString(idToFiles.get(id))));
-				Util.appendFile("," + commaToOther(idToClassName.get(id).name));
-				Util.appendFile("," + commaToOther("ClassName"));
-				Util.appendFile(",,,,,,,,,,,,,,,");
-				Util.appendFile("\n");
-			}
-		}
-		for (String id: idToMethodName.keySet()) {
-			if (!idToMethodNameExpansions.keySet().contains(id)) {
-				Util.appendFile(commaToOther(id));
-				Util.appendFile("," + commaToOther(printHashSetString(idToFiles.get(id))));
-				Util.appendFile("," + commaToOther(idToMethodName.get(id).name));
-				Util.appendFile("," + commaToOther("MethodName"));
-				Util.appendFile(",,,,,,,,,,,,,,,");
-				Util.appendFile("\n");
-			}
-		}
-		for (String id: idToParameter.keySet()) {
-			if (!idToParameterNameExpansions.keySet().contains(id)) {
-				Util.appendFile(commaToOther(id));
-				Util.appendFile("," + commaToOther(printHashSetString(idToFiles.get(id))));
-				Util.appendFile("," + commaToOther(idToParameter.get(id).name));
-				Util.appendFile("," + commaToOther("ParameterName"));
-				Util.appendFile(",,,,,,,,,,,,,,,");
-				Util.appendFile("\n");
-			}
-		}
-		for (String id: idToField.keySet()) {
-			if (!idToFieldNameExpansions.keySet().contains(id)) {
-				Util.appendFile(commaToOther(id));
-				Util.appendFile("," + commaToOther(printHashSetString(idToFiles.get(id))));
-				Util.appendFile("," + commaToOther(idToField.get(id).name));
-				Util.appendFile("," + commaToOther("FieldName"));
-				Util.appendFile(",,,,,,,,,,,,,,,");
-				Util.appendFile("\n");
-			}
-		}
-		for (String id: idToVariable.keySet()) {
-			if (!idToVariableNameExpansions.keySet().contains(id)) {
-				Util.appendFile(commaToOther(id));
-				Util.appendFile("," + commaToOther(printHashSetString(idToFiles.get(id))));
-				Util.appendFile("," + commaToOther(idToVariable.get(id).name));
-				Util.appendFile("," + commaToOther("VariableName"));
-				Util.appendFile(",,,,,,,,,,,,,,,");
-				Util.appendFile("\n");
-			}
+		for (String key : idToLocatedIdentifier.keySet()) {
+			appendColumn(sb, key);
 		}
 
-		for (String id : idToClassNameExpansions.keySet()) {
-			ClassNameExpansions temp = idToClassNameExpansions.get(id);
-			Util.appendFile(commaToOther(id));
-			Util.appendFile("," + commaToOther(printHashSetString(idToFiles.get(id))));
-			Util.appendFile("," + commaToOther(idToClassName.get(id).name));
-			Util.appendFile("," + commaToOther("ClassName"));
-			Util.appendFile("," + commaToOther(printHashSet(temp.subclass)));
-			Util.appendFile("," + commaToOther(printHashSet(temp.subsubclass)));
-			Util.appendFile("," + commaToOther(printHashSet(temp.parents)));
-			Util.appendFile("," + commaToOther(printHashSet(temp.ancestor)));
-			Util.appendFile("," + commaToOther(printHashSet(temp.methods)));
-			Util.appendFile("," + commaToOther(printHashSet(temp.fields)));
-			Util.appendFile("," + commaToOther(printHashSetString(temp.comment)));
-			Util.appendFile(",");
-			Util.appendFile(",");
-			Util.appendFile(",");
-			Util.appendFile(",");
-			Util.appendFile(",");
-			Util.appendFile(",");
-			Util.appendFile(",");
-			Util.appendFile(",");
-			Util.appendFile("\n");
-
-		}
-		for (String id : idToMethodNameExpansions.keySet()) {
-			MethodNameExpansions temp = idToMethodNameExpansions.get(id);
-			Util.appendFile(commaToOther(id));
-			Util.appendFile("," + commaToOther(printHashSetString(idToFiles.get(id))));
-			Util.appendFile("," + commaToOther(idToMethodName.get(id).name));
-			Util.appendFile("," + commaToOther("MethodName"));
-			Util.appendFile(",");
-			Util.appendFile(",");
-			Util.appendFile(",");
-			Util.appendFile(",");
-			Util.appendFile(",");
-			Util.appendFile(",");
-			Util.appendFile("," + commaToOther(printHashSetString(temp.comment)));
-			Util.appendFile("," + commaToOther(printHashSet(temp.type)));
-			Util.appendFile("," + commaToOther(printHashSet(temp.enclosingClass)));
-			Util.appendFile("," + commaToOther(printHashSet(temp.assignment)));
-			Util.appendFile("," + commaToOther(printHashSet(temp.methodInvocated)));
-			Util.appendFile("," + commaToOther(printHashSet(temp.parameterArgument)));
-			Util.appendFile("," + commaToOther(printHashSet(temp.parameter)));
-			Util.appendFile(",");
-			Util.appendFile(",");
-			Util.appendFile("\n");
-
-		}
-		for (String id : idToFieldNameExpansions.keySet()) {
-			FieldNameExpansions temp = idToFieldNameExpansions.get(id);
-			Util.appendFile(commaToOther(id));
-			Util.appendFile("," + commaToOther(printHashSetString(idToFiles.get(id))));
-			Util.appendFile("," + commaToOther(idToField.get(id).name));
-			Util.appendFile("," + commaToOther("FieldName"));
-			Util.appendFile(",");
-			Util.appendFile(",");
-			Util.appendFile(",");
-			Util.appendFile(",");
-			Util.appendFile(",");
-			Util.appendFile(",");
-			Util.appendFile("," + commaToOther(printHashSetString(temp.comment)));
-			Util.appendFile("," + commaToOther(printHashSet(temp.type)));
-			Util.appendFile("," + commaToOther(printHashSet(temp.enclosingClass)));
-			Util.appendFile("," + commaToOther(printHashSet(temp.assignment)));
-			Util.appendFile("," + commaToOther(printHashSet(temp.methodInvocated)));
-			Util.appendFile("," + commaToOther(printHashSet(temp.parameterArgument)));
-			Util.appendFile(",");
-			Util.appendFile(",");
-			Util.appendFile(",");
-			Util.appendFile("\n");
-
-		}
-		for (String id : idToParameterNameExpansions.keySet()) {
-			ParameterNameExpansions temp = idToParameterNameExpansions.get(id);
-			Util.appendFile(commaToOther(id));
-			Util.appendFile("," + commaToOther(printHashSetString(idToFiles.get(id))));
-			Util.appendFile("," + commaToOther(idToParameter.get(id).name));
-			Util.appendFile("," + commaToOther("ParameterName"));
-			Util.appendFile(",");
-			Util.appendFile(",");
-			Util.appendFile(",");
-			Util.appendFile(",");
-			Util.appendFile(",");
-			Util.appendFile(",");
-			Util.appendFile("," + commaToOther(printHashSetString(temp.comment)));
-			Util.appendFile("," + commaToOther(printHashSet(temp.type)));
-			Util.appendFile(",");
-			Util.appendFile("," + commaToOther(printHashSet(temp.assignment)));
-			Util.appendFile("," + commaToOther(printHashSet(temp.methodInvocated)));
-			Util.appendFile("," + commaToOther(printHashSet(temp.parameterArgument)));
-			Util.appendFile(",");
-			Util.appendFile("," + commaToOther(printHashSet(temp.enclosingMethod)));
-			Util.appendFile("," + commaToOther(printHashSet(temp.argument)));
-			Util.appendFile("\n");
-
-		}
-		for (String id : idToVariableNameExpansions.keySet()) {
-			VariableNameExpansions temp = idToVariableNameExpansions.get(id);
-			Util.appendFile(commaToOther(id));
-			Util.appendFile("," + commaToOther(printHashSetString(idToFiles.get(id))));
-			Util.appendFile("," + commaToOther(idToVariable.get(id).name));
-			Util.appendFile("," + commaToOther("VariableName"));
-			Util.appendFile(",");
-			Util.appendFile(",");
-			Util.appendFile(",");
-			Util.appendFile(",");
-			Util.appendFile(",");
-			Util.appendFile(",");
-			Util.appendFile("," + commaToOther(printHashSetString(temp.comment)));
-			Util.appendFile("," + commaToOther(printHashSet(temp.type)));
-			Util.appendFile("," + commaToOther(printHashSet(temp.enclosingClass)));
-			Util.appendFile("," + commaToOther(printHashSet(temp.assignment)));
-			Util.appendFile("," + commaToOther(printHashSet(temp.methodInvocated)));
-			Util.appendFile("," + commaToOther(printHashSet(temp.parameterArgument)));
-			Util.appendFile(",");
-			Util.appendFile("," + commaToOther(printHashSet(temp.enclosingMethod)));
-			Util.appendFile(",");
-			Util.appendFile("\n");
-
-		}
+		Util.exportToFile(sb);
 	}
 
-	private static String printHashSetString(HashSet<String> hashSet) {
-		String result = "";
-		for (String string : hashSet) {
-			result += string + ";";
+	private static void appendColumn(StringBuilder sb, String key) {
+		Expansions base = idToExpansions.get(key);
+		String files = idToFile.get(key);
+		LocatedIdentifier identifier = idToLocatedIdentifier.get(key);
+		sb.append(commaToOther(key)) // id
+				.append(",")
+				.append(commaToOther(files)) // files
+				.append(",")
+				.append(identifier.getLine()) // line
+				.append(",")
+				.append(commaToOther(identifier.getName())) // name
+				.append(",")
+				.append(identifier.getType()); //type
+		for (String expan : expansions) {
+			sb.append(",");
+			if (base == null) {
+				continue;
+			}
+			HashSet<String> set = base.getExpansions(expan);
+			if (set != null) {
+				sb.append(commaToOther(printHashSet(set)));
+			}
 		}
-		return result;
+		sb.append("\n");
+	}
+	
+	
+	private static String printHashSetString(HashSet<String> hashSet) {
+		if (hashSet == null) {
+			return "";
+		}
+		StringBuilder sb = new StringBuilder();
+		for (String string : hashSet) {
+			sb.append(string)
+					.append(";");
+		}
+		return sb.toString();
 	}
 
 	private static String parseComment(String comment) {
@@ -390,39 +299,30 @@ public class AllExpansions {
 
 
 	private static void handleExpansionType() {
-		for (String id : idToMethodName.keySet()) {
-			MethodName methodName = idToMethodName.get(id);
-			if (methodName.type != null) {
-				addExpansion(methodName, methodName.type, "MethodName", "type");
+		for (String id : idToLocatedIdentifier.keySet()) {
+			LocatedIdentifier identifier = idToLocatedIdentifier.get(id);
+			ClassName typeClass = identifier.getTypeClass();
+			if (typeClass != null) {
+				addExpansion(identifier.getId(), typeClass.id, identifier.getType(), "type");
+				addExpansion(typeClass.id, identifier.getId(),"ClassName", "type");
 			}
 		}
-		for (String id : idToField.keySet()) {
-			Field field = idToField.get(id);
-			addExpansion(field, field.type, "FieldName", "type");
-		}
-		for (String id : idToParameter.keySet()) {
-			Parameter parameter = idToParameter.get(id);
-			addExpansion(parameter, parameter.type, "ParameterName", "type");
-		}
-		for (String id : idToVariable.keySet()) {
-			Variable variable = (Variable) idToVariable.get(id);
-			addExpansion(variable, variable.type, "VariableName", "type");
-		}
 	}
+
 	private static void handleMethodInvocation() {
 		HashMap<String, MethodDeclarationInfo> hashMap = new HashMap<>();
-		for (int i = 0; i < methodDeclarationInfos.size(); i++) {
-			hashMap.put(methodDeclarationInfos.get(i).methodName.id, methodDeclarationInfos.get(i));
+		HashSet<String> unresolved = new HashSet<>();
+		for (MethodDeclarationInfo declarationInfo : methodDeclarationInfos) {
+			hashMap.put(declarationInfo.methodName.id, declarationInfo);
 		}
-		for (int i = 0; i < methodInvocationInfos.size(); i++) {
-			MethodInvocationInfo methodInvocationInfo = methodInvocationInfos.get(i);
+		for (MethodInvocationInfo methodInvocationInfo : methodInvocationInfos) {
 			String methodId = methodInvocationInfo.methodName.id;
 			if (hashMap.containsKey(methodId)) {
 				MethodDeclarationInfo methodDeclarationInfo = hashMap.get(methodId);
 				ArrayList<Parameter> parameters = methodDeclarationInfo.parameters;
 				ArrayList<Argument> arguments = methodInvocationInfo.arguments;
 				if (parameters.size() != arguments.size()) {
-					System.err.println("not equal size of parameters and arguments " + parameters.size() + " " + arguments.size());
+//					System.err.println("not equal size of parameters and arguments " + parameters.size() + " " + arguments.size());
 					continue;
 				}
 				for (int j = 0; j < parameters.size(); j++) {
@@ -430,8 +330,8 @@ public class AllExpansions {
 					Argument argument = arguments.get(j);
 					for (int k = 0; k < argument.identifiers.size(); k++) {
 						Identifier identifier = argument.identifiers.get(k);
-						if (!idToClassName.keySet().contains(identifier.id)) {
-							addExpansion(parameter, identifier, "ParameterName", "argument");
+						if (!idToClassName.containsKey(identifier.id)) {
+							addExpansion(parameter.id, identifier.id, "ParameterName", "parameterToArgument");
 						}
 					}
 				}
@@ -440,31 +340,17 @@ public class AllExpansions {
 					Argument argument = arguments.get(j);
 					for (int k = 0; k < argument.identifiers.size(); k++) {
 						Identifier identifier = argument.identifiers.get(k);
-						if (!idToClassName.keySet().contains(identifier.id)) {
-							addExpansionAccordingToType(identifier, methodInvocationInfo.methodName, "methodInvocated");
-							addExpansionAccordingToType(identifier, parameter, "parameterArgument");
+						if (!idToClassName.containsKey(identifier.id)) {
+							addExpansionAccordingToType(identifier.id, methodInvocationInfo.methodName.id, "pass");
+							addExpansionAccordingToType(identifier.id, parameter.id, "argumentToParameter");
 						}
 					}
 				}
 			} else {
-				System.err.println("NOT CONTAIN:\t" + methodId);
+				unresolved.add(methodId);
 			}
 		}
 	}
-
-	public static void postprocess() {
-		handleFieldParameterVariable();
-		handleAssign();
-		handleMethodInvocation();
-		handleComment();
-
-		handleExtend();
-		handleMethodDeclaration();
-		handleExpansionType();
-
-		toFile();
-	}
-
 
 	private static void handleAssign() {
 		for (AssignInfo assignInfo : assignInfos) {
@@ -473,12 +359,10 @@ public class AllExpansions {
 
 			if (right != null) {
 
-				for (int i = 0; i < left.size(); i++) {
-					Identifier identifier1 = left.get(i);
-					for (int j = 0; j < right.size(); j++) {
-						Identifier identifier2 = right.get(j);
-						addExpansionAccordingToType(identifier1, identifier2, "assignment");
-						addExpansionAccordingToType(identifier2, identifier1, "assignment");
+				for (Identifier identifier1 : left) {
+					for (Identifier identifier2 : right) {
+						addExpansionAccordingToType(identifier1.id, identifier2.id, "assignmentEquation");
+						addExpansionAccordingToType(identifier2.id, identifier1.id, "assignmentEquation");
 					}
 				}
 			}
@@ -492,43 +376,29 @@ public class AllExpansions {
 			for (String string : temp) {
 				comment += string + " ";
 			}
-			if (idToClassName.keySet().contains(id)) {
-				addExpansion(idToClassName.get(id), new Identifier(null, parseComment(comment)), "ClassName", "comment");
-			} else if (idToMethodName.keySet().contains(id)) {
-				addExpansion(idToMethodName.get(id), new Identifier(null, parseComment(comment)), "MethodName", "comment");
-			} else if (idToField.keySet().contains(id)) {
-				addExpansion(idToField.get(id), new Identifier(null, parseComment(comment)), "FieldName", "comment");
-			} else if (idToParameter.keySet().contains(id)) {
-				addExpansion(idToParameter.get(id), new Identifier(null, parseComment(comment)), "ParameterName", "comment");
-			} else if (idToVariable.keySet().contains(id)) {
-				addExpansion(idToVariable.get(id), new Identifier(null, parseComment(comment)), "VariableName", "comment");
+			if (idToLocatedIdentifier.containsKey(id)) {
+				LocatedIdentifier identifier = idToLocatedIdentifier.get(id);
+				addExpansion(id, parseComment(comment), identifier.getType(), "comment");
 			}
 		}
 	}
 
-	private static void addExpansionAccordingToType(Identifier identifier1,
-			Identifier identifier2, String relationType) {
-		String id = identifier1.id;
-		if (idToClassName.keySet().contains(id)) {
-			addExpansion(identifier1, identifier2, "ClassName", relationType);
-		} else if (idToMethodName.keySet().contains(id)) {
-			addExpansion(identifier1, identifier2, "MethodName", relationType);
-		} else if (idToField.keySet().contains(id)) {
-			addExpansion(identifier1, identifier2, "FieldName", relationType);
-		} else if (idToParameter.keySet().contains(id)) {
-			addExpansion(identifier1, identifier2, "ParameterName", relationType);
-		} else if (idToVariable.keySet().contains(id)) {
-			addExpansion(identifier1, identifier2, "VariableName", relationType);
+	private static void addExpansionAccordingToType(String id, String value, String relationType) {
+		if (idToLocatedIdentifier.containsKey(id)) {
+			LocatedIdentifier identifier = idToLocatedIdentifier.get(id);
+			addExpansion(id, value, identifier.getType(), relationType);
 		}
 	}
 
 	private static void handleFieldParameterVariable() {
 		for (String id : idToIdentifier.keySet()) {
-			if (idToParameter.keySet().contains(id) || idToField.keySet().contains(id) ||
-					idToClassName.keySet().contains(id) || idToMethodName.keySet().contains(id)) {
+			if (idToParameter.containsKey(id) ||
+					idToField.containsKey(id) ||
+					idToClassName.containsKey(id) ||
+					idToMethodName.containsKey(id)) {
+
 			} else {
 				Identifier identifier = idToIdentifier.get(id);
-
 				if (identifier instanceof Field) {
 					idToField.put(id, (Field) identifier);
 				} else if (identifier instanceof ClassName) {
@@ -539,361 +409,18 @@ public class AllExpansions {
 					idToMethodName.put(id, (MethodName) identifier);
 				} else if (identifier instanceof Variable) {
 					idToVariable.put(id, (Variable) identifier);
-				} 
+				}
 			}
 		}
 	}
 
-	public static void addExpansion(Identifier left, Identifier right, String identifierType, String relationType) {
-		switch (identifierType) {
-		case "ClassName":
-		{
-			switch (relationType) {
-			case "subclass":
-				if (idToClassNameExpansions.containsKey(left.id)) {
-					idToClassNameExpansions.get(left.id).subclass.add(right.id);
-				} else {
-					ClassNameExpansions expansion = new ClassNameExpansions();
-					expansion.subclass.add(right.id);
-					idToClassNameExpansions.put(left.id, expansion);
-				}
-				break;
-			case "subsubclass":
-				if (idToClassNameExpansions.containsKey(left.id)) {
-					idToClassNameExpansions.get(left.id).subsubclass.add(right.id);
-				} else {
-					ClassNameExpansions expansion = new ClassNameExpansions();
-					expansion.subsubclass.add(right.id);
-					idToClassNameExpansions.put(left.id, expansion);
-				}
-				break;
-			case "parents":
-				if (idToClassNameExpansions.containsKey(left.id)) {
-					idToClassNameExpansions.get(left.id).parents.add(right.id);
-				} else {
-					ClassNameExpansions expansion = new ClassNameExpansions();
-					expansion.parents.add(right.id);
-					idToClassNameExpansions.put(left.id, expansion);
-				}
-				break;
-			case "ancestor":
-				if (idToClassNameExpansions.containsKey(left.id)) {
-					idToClassNameExpansions.get(left.id).ancestor.add(right.id);
-				} else {
-					ClassNameExpansions expansion = new ClassNameExpansions();
-					expansion.ancestor.add(right.id);
-					idToClassNameExpansions.put(left.id, expansion);
-				}
-				break;
-			case "methods":
-				if (idToClassNameExpansions.containsKey(left.id)) {
-					idToClassNameExpansions.get(left.id).methods.add(right.id);
-				} else {
-					ClassNameExpansions expansion = new ClassNameExpansions();
-					expansion.methods.add(right.id);
-					idToClassNameExpansions.put(left.id, expansion);
-				}
-				break;
-			case "fields":
-				if (idToClassNameExpansions.containsKey(left.id)) {
-					idToClassNameExpansions.get(left.id).fields.add(right.id);
-				} else {
-					ClassNameExpansions expansion = new ClassNameExpansions();
-					expansion.fields.add(right.id);
-					idToClassNameExpansions.put(left.id, expansion);
-				}
-				break;
-			case "comment":
-				if (idToClassNameExpansions.containsKey(left.id)) {
-					idToClassNameExpansions.get(left.id).comment.add(right.name);
-				} else {
-					ClassNameExpansions expansion = new ClassNameExpansions();
-					expansion.comment.add(right.name);
-					idToClassNameExpansions.put(left.id, expansion);
-				}
-				break;
-			default:
-				break;
-			}
-		}
-		break;
-		case "FieldName":
-		{
-			switch (relationType) {
-			case "type":
-				if (idToFieldNameExpansions.containsKey(left.id)) {
-					idToFieldNameExpansions.get(left.id).type.add(right.id);
-				} else {
-					FieldNameExpansions expansion = new FieldNameExpansions();
-					expansion.type.add(right.id);
-					idToFieldNameExpansions.put(left.id, expansion);
-				}
-				break;
-			case "comment":
-				if (idToFieldNameExpansions.containsKey(left.id)) {
-					idToFieldNameExpansions.get(left.id).comment.add(right.name);
-				} else {
-					FieldNameExpansions expansion = new FieldNameExpansions();
-					expansion.comment.add(right.name);
-					idToFieldNameExpansions.put(left.id, expansion);
-				}
-				break;
-			case "enclosingClass":
-				if (idToFieldNameExpansions.containsKey(left.id)) {
-					idToFieldNameExpansions.get(left.id).enclosingClass.add(right.id);
-				} else {
-					FieldNameExpansions expansion = new FieldNameExpansions();
-					expansion.enclosingClass.add(right.id);
-					idToFieldNameExpansions.put(left.id, expansion);
-				}
-				break;
-			case "assignment":
-				if (idToFieldNameExpansions.containsKey(left.id)) {
-					idToFieldNameExpansions.get(left.id).assignment.add(right.id);
-				} else {
-					FieldNameExpansions expansion = new FieldNameExpansions();
-					expansion.assignment.add(right.id);
-					idToFieldNameExpansions.put(left.id, expansion);
-				}
-				break;
-			case "methodInvocated":
-				if (idToFieldNameExpansions.containsKey(left.id)) {
-					idToFieldNameExpansions.get(left.id).methodInvocated.add(right.id);
-				} else {
-					FieldNameExpansions expansion = new FieldNameExpansions();
-					expansion.methodInvocated.add(right.id);
-					idToFieldNameExpansions.put(left.id, expansion);
-				}
-				break;
-			case "parameterArgument":
-				if (idToFieldNameExpansions.containsKey(left.id)) {
-					idToFieldNameExpansions.get(left.id).parameterArgument.add(right.id);
-				} else {
-					FieldNameExpansions expansion = new FieldNameExpansions();
-					expansion.parameterArgument.add(right.id);
-					idToFieldNameExpansions.put(left.id, expansion);
-				}
-				break;
-			default:
-				break;
-			}
-		}
-		break;
-		case "MethodName":
-		{
-			switch (relationType) {
-			case "type":
-				if (idToMethodNameExpansions.containsKey(left.id)) {
-					idToMethodNameExpansions.get(left.id).type.add(right.id);
-				} else {
-					MethodNameExpansions expansion = new MethodNameExpansions();
-					expansion.type.add(right.id);
-					idToMethodNameExpansions.put(left.id, expansion);
-				}
-				break;
-			case "comment":
-				if (idToMethodNameExpansions.containsKey(left.id)) {
-					idToMethodNameExpansions.get(left.id).comment.add(right.name);
-				} else {
-					MethodNameExpansions expansion = new MethodNameExpansions();
-					expansion.comment.add(right.name);
-					idToMethodNameExpansions.put(left.id, expansion);
-				}
-				break;
-			case "enclosingClass":
-				if (idToMethodNameExpansions.containsKey(left.id)) {
-					idToMethodNameExpansions.get(left.id).enclosingClass.add(right.id);
-				} else {
-					MethodNameExpansions expansion = new MethodNameExpansions();
-					expansion.enclosingClass.add(right.id);
-					idToMethodNameExpansions.put(left.id, expansion);
-				}
-				break;
-			case "parameter":
-				if (idToMethodNameExpansions.containsKey(left.id)) {
-					idToMethodNameExpansions.get(left.id).parameter.add(right.id);
-				} else {
-					MethodNameExpansions expansion = new MethodNameExpansions();
-					expansion.parameter.add(right.id);
-					idToMethodNameExpansions.put(left.id, expansion);
-				}
-				break;
-			case "assignment":
-				if (idToMethodNameExpansions.containsKey(left.id)) {
-					idToMethodNameExpansions.get(left.id).assignment.add(right.id);
-				} else {
-					MethodNameExpansions expansion = new MethodNameExpansions();
-					expansion.assignment.add(right.id);
-					idToMethodNameExpansions.put(left.id, expansion);
-				}
-				break;
-			case "parameterArgument":
-				if (idToMethodNameExpansions.containsKey(left.id)) {
-					idToMethodNameExpansions.get(left.id).parameterArgument.add(right.id);
-				} else {
-					MethodNameExpansions expansion = new MethodNameExpansions();
-					expansion.parameterArgument.add(right.id);
-					idToMethodNameExpansions.put(left.id, expansion);
-				}
-				break;
-			case "methodInvocated":
-				if (idToMethodNameExpansions.containsKey(left.id)) {
-					idToMethodNameExpansions.get(left.id).methodInvocated.add(right.id);
-				} else {
-					MethodNameExpansions expansion = new MethodNameExpansions();
-					expansion.methodInvocated.add(right.id);
-					idToMethodNameExpansions.put(left.id, expansion);
-				}
-				break;
-			default:
-				break;
-			}
-		}
-		break;
-		case "ParameterName":
-		{
-			switch (relationType) {
-			case "type":
-				if (idToParameterNameExpansions.containsKey(left.id)) {
-					idToParameterNameExpansions.get(left.id).type.add(right.id);
-				} else {
-					ParameterNameExpansions expansion = new ParameterNameExpansions();
-					expansion.type.add(right.id);
-					idToParameterNameExpansions.put(left.id, expansion);
-				}
-				break;
-			case "comment":
-				if (idToParameterNameExpansions.containsKey(left.id)) {
-					idToParameterNameExpansions.get(left.id).comment.add(right.name);
-				} else {
-					ParameterNameExpansions expansion = new ParameterNameExpansions();
-					expansion.comment.add(right.name);
-					idToParameterNameExpansions.put(left.id, expansion);
-				}
-				break;
-			case "parameterArgument":
-				if (idToParameterNameExpansions.containsKey(left.id)) {
-					idToParameterNameExpansions.get(left.id).parameterArgument.add(right.id);
-				} else {
-					ParameterNameExpansions expansion = new ParameterNameExpansions();
-					expansion.parameterArgument.add(right.id);
-					idToParameterNameExpansions.put(left.id, expansion);
-				}
-				break;
-			case "enclosingMethod":
-				if (idToParameterNameExpansions.containsKey(left.id)) {
-					idToParameterNameExpansions.get(left.id).enclosingMethod.add(right.id);
-				} else {
-					ParameterNameExpansions expansion = new ParameterNameExpansions();
-					expansion.enclosingMethod.add(right.id);
-					idToParameterNameExpansions.put(left.id, expansion);
-				}
-				break;
-			case "argument":
-				if (idToParameterNameExpansions.containsKey(left.id)) {
-					idToParameterNameExpansions.get(left.id).argument.add(right.id);
-				} else {
-					ParameterNameExpansions expansion = new ParameterNameExpansions();
-					expansion.argument.add(right.id);
-					idToParameterNameExpansions.put(left.id, expansion);
-				}
-				break;
-			case "assignment":
-				if (idToParameterNameExpansions.containsKey(left.id)) {
-					idToParameterNameExpansions.get(left.id).assignment.add(right.id);
-				} else {
-					ParameterNameExpansions expansion = new ParameterNameExpansions();
-					expansion.assignment.add(right.id);
-					idToParameterNameExpansions.put(left.id, expansion);
-				}
-				break;
-			case "methodInvocated":
-				if (idToParameterNameExpansions.containsKey(left.id)) {
-					idToParameterNameExpansions.get(left.id).methodInvocated.add(right.id);
-				} else {
-					ParameterNameExpansions expansion = new ParameterNameExpansions();
-					expansion.methodInvocated.add(right.id);
-					idToParameterNameExpansions.put(left.id, expansion);
-				}
-				break;
-			default:
-				break;
-			}
-		}
-		break;
-		case "VariableName":
-		{
-			switch (relationType) {
-			case "type":
-				if (idToVariableNameExpansions.containsKey(left.id)) {
-					idToVariableNameExpansions.get(left.id).type.add(right.id);
-				} else {
-					VariableNameExpansions expansion = new VariableNameExpansions();
-					expansion.type.add(right.id);
-					idToVariableNameExpansions.put(left.id, expansion);
-				}
-				break;
-			case "methodInvocated":
-				if (idToVariableNameExpansions.containsKey(left.id)) {
-					idToVariableNameExpansions.get(left.id).methodInvocated.add(right.id);
-				} else {
-					VariableNameExpansions expansion = new VariableNameExpansions();
-					expansion.methodInvocated.add(right.id);
-					idToVariableNameExpansions.put(left.id, expansion);
-				}
-				break;
-			case "comment":
-				if (idToVariableNameExpansions.containsKey(left.id)) {
-					idToVariableNameExpansions.get(left.id).comment.add(right.name);
-				} else {
-					VariableNameExpansions expansion = new VariableNameExpansions();
-					expansion.comment.add(right.name);
-					idToVariableNameExpansions.put(left.id, expansion);
-				}
-				break;
-			case "enclosingMethod":
-				if (idToVariableNameExpansions.containsKey(left.id)) {
-					idToVariableNameExpansions.get(left.id).enclosingMethod.add(right.id);
-				} else {
-					VariableNameExpansions expansion = new VariableNameExpansions();
-					expansion.enclosingMethod.add(right.id);
-					idToVariableNameExpansions.put(left.id, expansion);
-				}
-				break;
-			case "enclosingClass":
-				if (idToVariableNameExpansions.containsKey(left.id)) {
-					idToVariableNameExpansions.get(left.id).enclosingClass.add(right.id);
-				} else {
-					VariableNameExpansions expansion = new VariableNameExpansions();
-					expansion.enclosingClass.add(right.id);
-					idToVariableNameExpansions.put(left.id, expansion);
-				}
-				break;
-			case "parameterArgument":
-				if (idToVariableNameExpansions.containsKey(left.id)) {
-					idToVariableNameExpansions.get(left.id).parameterArgument.add(right.id);
-				} else {
-					VariableNameExpansions expansion = new VariableNameExpansions();
-					expansion.parameterArgument.add(right.id);
-					idToVariableNameExpansions.put(left.id, expansion);
-				}
-				break;
-			case "assignment":
-				if (idToVariableNameExpansions.containsKey(left.id)) {
-					idToVariableNameExpansions.get(left.id).assignment.add(right.id);
-				} else {
-					VariableNameExpansions expansion = new VariableNameExpansions();
-					expansion.assignment.add(right.id);
-					idToVariableNameExpansions.put(left.id, expansion);
-				}
-				break;
-			default:
-				break;
-			}
-		}
-		break;
-		default:
-			break;
+	public static void addExpansion(String id, String value, String identifierType, String relationType) {
+		if (idToExpansions.containsKey(id)) {
+			idToExpansions.get(id).setExpansions(relationType, value);
+		} else {
+			Expansions expansions = ExpansionsFactory.create(identifierType);
+			expansions.setExpansions(relationType, value);
+			idToExpansions.put(id, expansions);
 		}
 	}
 }

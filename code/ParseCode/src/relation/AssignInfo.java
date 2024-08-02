@@ -4,7 +4,7 @@ import java.util.ArrayList;
 
 import entity.Identifier;
 
-public class AssignInfo extends RelationBase {
+public class AssignInfo extends Info {
 	public ArrayList<Identifier> left;
 	public ArrayList<Identifier> right;
 	public AssignInfo(int line, ArrayList<Identifier> left, ArrayList<Identifier> right) {

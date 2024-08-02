@@ -1,8 +1,21 @@
 package util;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 
 public class Heu {
+    public enum Heuristic {
+        ST("stable"),
+        H1("acronym"),
+        H2("prefix"),
+        H3("dropped-letter");
+
+        public final String description;
+        Heuristic(String description) {
+            this.description = description;
+        }
+    }
+
     public static String H1(String abbr, ArrayList<String> terms) {
         if (abbr.length() == 1) {
             return null;
@@ -12,14 +25,14 @@ public class Heu {
         }
 
         for (int i = 0; i <= terms.size()-abbr.length(); i++) {
-            String ics = "";
+            StringBuilder ics = new StringBuilder();
 
             for (int j = i; j < abbr.length()+i; j++) {
                 String term = terms.get(j);
-                ics = ics + term.charAt(0);
+                ics.append(term.charAt(0));
             }
-            if (abbr.equals(ics)) {
-                String temp = "";
+            if (abbr.equals(ics.toString())) {
+                StringBuilder temp = new StringBuilder();
 
                 for (int j = i; j < abbr.length()+i; j++) {
                     String term = terms.get(j);
@@ -27,10 +40,10 @@ public class Heu {
                         // expand fail
                         return null;
                     }
-                    temp = temp + term;                }
+                    temp.append(term).append("#");
+                }
 
-                String expansion = temp;
-                return expansion;
+                return temp.toString();
             }
         }
         return null;
@@ -40,7 +53,7 @@ public class Heu {
         if (H1(abbr, terms) != null) {
             return null;
         }
-        ArrayList<String> possibleExpansions = new ArrayList<String>();
+        ArrayList<String> possibleExpansions = new ArrayList<>();
         for (String term : terms) {
             if (term.startsWith(abbr) && Dic.isInDict(term)) {
                 possibleExpansions.add(term);
@@ -50,12 +63,10 @@ public class Heu {
             // expand fail
             return null;
         }
-
-        String expansion = "";
-        for (String possibleExpansion : possibleExpansions) {
-            expansion += possibleExpansion + "#";
-        }
-        return expansion;
+        return possibleExpansions
+                .stream()
+                .min(Comparator.comparingInt(String::length))
+                .orElse(null);
     }
 
     public static String H3(String abbr, ArrayList<String> terms) {
@@ -76,21 +87,21 @@ public class Heu {
             return null;
         }
 
-        String expansion = "";
-        for (String possibleExpansion : possibleExpansions) {
-            expansion += possibleExpansion + "#";
-        }
-        return expansion;
+        return possibleExpansions
+                .stream()
+                .min(Comparator.comparingInt(String::length))
+                .orElse(null);
     }
-    public static String handleCommentForH(String part, String comment, String H) {
-        String result = "";
+
+    public static ArrayList<String> handleCommentForH(String part, String comment, String H) {
+        ArrayList<String> result = new ArrayList<>();
         comment = comment.replaceAll(";", " ");
         String[] parts = comment.split(" ");
 
         ArrayList<String> dicWordList = new ArrayList<>();
-        for (int i = 0; i < parts.length; i++) {
-            if (parts[i].length() != 0 && Dic.isInDict(parts[i])) {
-                dicWordList.add(parts[i]);
+        for (String s : parts) {
+            if (s.length() != 0 && Dic.isInDict(s)) {
+                dicWordList.add(s);
             }
         }
 
@@ -99,36 +110,36 @@ public class Heu {
                 if (dicWordList.size() >= part.length()) {
                     for (int i = 0; i <= dicWordList.size() - part.length(); i++) {
                         boolean flag = true;
-                        String expansion = "";
+                        StringBuilder expansion = new StringBuilder();
                         for (int j = 0; j < part.length(); j++) {
                             if (part.charAt(j) != dicWordList.get(i + j).charAt(0)) {
                                 flag = false;
                                 break;
                             }
-                            expansion += dicWordList.get(i + j);
+                            expansion.append(dicWordList.get(i + j));
                         }
-                        if (flag == true) {
-                            result += expansion + ";";
+                        if (flag) {
+                            result.add(expansion.toString());
                         }
                     }
                 }
                 break;
             case "H2":
-                for (int i = 0; i < parts.length; i++) {
-                    if (parts[i].length() != 0) {
-                        String expansion = Heu.H2(part, Util.split(parts[i]));
+                for (String value : parts) {
+                    if (value.length() != 0) {
+                        String expansion = Heu.H2(part, Util.split(value).get("split"));
                         if (expansion != null) {
-                            result += expansion + ";";
+                            result.add(expansion);
                         }
                     }
                 }
                 break;
             case "H3":
-                for (int i = 0; i < parts.length; i++) {
-                    if (parts[i].length() != 0) {
-                        String expansion = Heu.H3(part, Util.split(parts[i]));
+                for (String s : parts) {
+                    if (s.length() != 0) {
+                        String expansion = Heu.H3(part, Util.split(s).get("split"));
                         if (expansion != null) {
-                            result += expansion + ";";
+                            result.add(expansion);
                         }
                     }
                 }
@@ -137,10 +148,9 @@ public class Heu {
         return result;
     }
 
-    public static String handleExpansionForH(String part, String str, String H) {
-        String result = "";
-
-        String[] identifiers = str.split(";");
+    public static ArrayList<String> handleExpansionForH(String part, String candidate, String H) {
+        ArrayList<String> result = new ArrayList<>();
+        String[] identifiers = candidate.split(" - ");
         for (int j = 0; j < identifiers.length; j++) {
             // may not contain the name of identifier
             if (identifiers[j].split(":").length != 2) {
@@ -148,42 +158,44 @@ public class Heu {
             }
             String nameOfIdentifier = identifiers[j].split(":")[1];
             String expansion = null;
+
             switch (H) {
                 case "H1":
-                    expansion = Heu.H1(part, Util.split(nameOfIdentifier));
+                    expansion = Heu.H1(part, Util.split(nameOfIdentifier).get("split"));
                     break;
                 case "H2":
-                    expansion = Heu.H2(part, Util.split(nameOfIdentifier));
+                    expansion = Heu.H2(part, Util.split(nameOfIdentifier).get("split"));
                     break;
                 case "H3":
-                    expansion = Heu.H3(part, Util.split(nameOfIdentifier));
+                    expansion = Heu.H3(part, Util.split(nameOfIdentifier).get("split"));
                     break;
             }
 
             if (expansion != null) {
-                result += expansion + ";";
-            } else {
+                result.add(expansion);
+            } else { // plural
                 if (part.length() > 1 && part.charAt(part.length()-1) == 's') {
                     String singlePart = part.substring(0, part.length()-1);
                     switch (H) {
                         case "H1":
-                            expansion = Heu.H1(singlePart, Util.split(nameOfIdentifier));
+                            expansion = Heu.H1(singlePart, Util.split(nameOfIdentifier).get("split"));
                             break;
                         case "H2":
-                            expansion = Heu.H2(singlePart, Util.split(nameOfIdentifier));
+                            expansion = Heu.H2(singlePart, Util.split(nameOfIdentifier).get("split"));
                             break;
                         case "H3":
-                            expansion = Heu.H3(singlePart, Util.split(nameOfIdentifier));
+                            expansion = Heu.H3(singlePart, Util.split(nameOfIdentifier).get("split"));
                             break;
                     }
                     if (expansion != null) {
-                        result += expansion + ";";
+                        result.add(expansion);
                     }
                 }
             }
         }
         return result;
     }
+
     public static boolean H1EqualOf(String selfExpansion, String HExpansion) {
         selfExpansion = selfExpansion.trim();
         HExpansion = HExpansion.trim();

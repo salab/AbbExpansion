@@ -1,20 +1,22 @@
 package entity;
 
-public class Field extends Identifier{
-	public ClassName type;
-	
-	public Field(String id, String name, ClassName type) {
-		super(id, name);
-		this.type = type;
+public class Field extends TypedIdentifier {
+
+	public Field(String id, String name, ClassName typeClass) {
+		super(id, name, typeClass);
 	}
 	
 	public Field(Variable variable) {
-		super(variable.id, variable.name);
-		this.type = variable.type;
+		this(variable.id, variable.name, variable.typeClass);
 	}
 
 	@Override
 	public String toString() {
-		return "Field [id=" + id + ", name=" + name + ", type=" + type + "]";
-	}	
+		return "Field [id=" + id + ", name=" + name + ", type=" + typeClass + "]";
+	}
+
+	@Override
+	protected void setType() {
+		type = "FieldName";
+	}
 }

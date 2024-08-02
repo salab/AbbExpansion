@@ -3,9 +3,81 @@ package util;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
-import java.util.ArrayList;
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class Util {
+
+    private final static Pattern delimiter = Pattern.compile("[\\_\\$\\d]+");
+    private final static Pattern upperCase = Pattern.compile("[A-Z]+");
+    private final static Pattern lowerCase = Pattern.compile("[a-z]+");
+    private final static Pattern titleCase = Pattern.compile("[A-Z][a-z]+");
+    public enum Case {
+        UPPER,
+        LOWER,
+        TITLE,
+        UNKNOWN
+    }
+
+    public enum Relation {
+        SC("subclass"),
+        SSC("descendant"),
+        PAREN("parent"),
+        AN("ancestor"),
+        ME("method"),
+        FI("field"),
+        CO("comment"),
+        TY("type"),
+        EN_C("enclosingClass"),
+        AS("assignmentEquation"),
+        ME_I("pass"),
+        PARAM_A("argumentToParameter"),
+        PARAM("parameter"),
+        EN_M("enclosingMethod"),
+        AR("parameterToArgument");
+
+        private final String name;
+        Relation(String name) {
+            this.name = name;
+        }
+
+        public String toColumnName() {
+            return name;
+        }
+    }
+
+    public static abstract class Line {
+        protected List<String> columns;
+        public final String rawLine;
+        private HashMap<String, String> content;
+
+        public Line(String line) {
+            rawLine = line;
+            setColumns();
+            setContent();
+        }
+
+        private void setContent() {
+            content = new HashMap<>();
+            String[] split = rawLine.split(",", -1);
+            if (split.length != columns.size()) {
+                System.err.println("Invalid line Size: " + split.length);
+                System.err.println(rawLine);
+            } else {
+                for (int i = 0; i < columns.size(); i++) {
+                    String value = split[i];
+                    content.put(columns.get(i), value);
+                }
+            }
+        }
+
+        public String get(String key) {
+            return content.get(key);
+        }
+
+        abstract protected void setColumns();
+    }
 
     public static boolean isLetter(char c) {
         if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
@@ -23,36 +95,80 @@ public class Util {
         }
     }
 
-    // str only consists of letters
-    public static ArrayList<String> splitBigLetter(String str) {
-        char[] list = str.toCharArray();
-        str = "A" + str + "A";
-        char[] tempList = str.toCharArray();
+    public static void splitBigLetter(String str, String lastSep, HashMap<String, ArrayList<String>> map) {
+        char[] decoratedList = ("A" + str + "A").toCharArray();
+        char[] tmpList = new char[str.length()];
 
-        for (int i = 1; i < tempList.length - 1; i++) {
-            if (tempList[i] >= 'A' && tempList[i] <= 'Z' &&
-                    tempList[i - 1] >= 'A' && tempList[i - 1] <= 'Z' &&
-                    tempList[i + 1] >= 'A' && tempList[i + 1] <= 'Z') {
-                list[i - 1] = (char) (tempList[i] - 'A' + 'a');
+        for (int i = 1; i < decoratedList.length - 1; i++) {
+            if (decoratedList[i] >= 'A' && decoratedList[i] <= 'Z' &&
+                    decoratedList[i - 1] >= 'A' && decoratedList[i - 1] <= 'Z' &&
+                    decoratedList[i + 1] >= 'A' && decoratedList[i + 1] <= 'Z') { // big letter
+                tmpList[i - 1] = (char) (decoratedList[i] - 'A' + 'a');
             } else {
-                list[i - 1] = tempList[i];
+                tmpList[i - 1] = decoratedList[i];
             }
         }
 
-        str = new String(list);
-        ArrayList<String> result = new ArrayList<String>();
+        String tmpStr = new String(tmpList) + "A";
         int startPositionOfSubstring = 0;
-        str = str + 'A';
-        for (int endPositionOfSubstring = 0; endPositionOfSubstring < str.length(); endPositionOfSubstring++) {
-            if (str.charAt(endPositionOfSubstring) >= 'A' && str.charAt(endPositionOfSubstring) <= 'Z') {
+        for (int endPositionOfSubstring = 0; endPositionOfSubstring < tmpStr.length(); endPositionOfSubstring++) {
+            if (tmpStr.charAt(endPositionOfSubstring) >= 'A' && tmpStr.charAt(endPositionOfSubstring) <= 'Z') {
                 // to exclude initial up case letter
                 if (str.substring(startPositionOfSubstring, endPositionOfSubstring).length() > 0) {
                     // to lower case
-                    result.add(str.substring(startPositionOfSubstring, endPositionOfSubstring).toLowerCase());
+                    String fragment = str.substring(startPositionOfSubstring, endPositionOfSubstring);
+                    map.get("split").add(fragment.toLowerCase());
+                    map.get("delimiter").add((endPositionOfSubstring == tmpStr.length() - 1) ? lastSep : "");
+                    if (getCase(fragment).equals(Case.UNKNOWN.name())) {
+                        System.err.println(str);
+                    }
+                    map.get("case").add(getCase(fragment));
                     startPositionOfSubstring = endPositionOfSubstring;
                 }
             }
         }
+    }
+
+    private static String getCase(String str) {
+        if (upperCase.matcher(str).matches()) {
+            return Case.UPPER.name();
+        } else if (titleCase.matcher(str).matches()) {
+            return Case.TITLE.name();
+        } else if (lowerCase.matcher(str).matches()) {
+            return Case.LOWER.name();
+        } else {
+            System.err.println("Unknown Case Found: " + str);
+            return Case.UNKNOWN.name();
+        }
+    }
+
+    private static ArrayList<String> getPattern(HashMap<String, ArrayList<String>> map) {
+        ArrayList<String> result = new ArrayList<>();
+        ArrayList<String> cases = map.get("case");
+        ArrayList<String> delims = map.get("delimiter");
+
+        Case case0 = cases.size() > 0 ?
+                Case.valueOf(cases.get(0)) :
+                null;
+        String[] remainCases = cases.size() > 1 ?
+                Arrays.copyOfRange(cases.toArray(new String[0]), 1, cases.size()) :
+                null;
+        String[] centerDelims = delims.size() > 2 ?
+                Arrays.copyOfRange(delims.toArray(new String[0]), 1, delims.size() - 1) :
+                null;
+
+        if (remainCases == null || Arrays.stream(remainCases).allMatch(c -> Case.valueOf(c) == Case.TITLE)) {
+            if (case0 == Case.LOWER) {
+                result.add("LCAMEL");
+            } else if (case0 == Case.TITLE) {
+                result.add("TCAMEL");
+            }
+        }
+        if (centerDelims != null &&
+                Arrays.stream(centerDelims).allMatch(d -> d.contains("_"))) {
+            result.add("SNAKE");
+        }
+
         return result;
     }
 
@@ -63,54 +179,60 @@ public class Util {
     // $
     // not start with numbers
     // the size of return value may be 0 (e.g., $)
-    public static ArrayList<String> split(String str) {
-        int temp1 = str.indexOf("<");
-        int temp2 = str.lastIndexOf(">");
+    public static HashMap<String, ArrayList<String>> split(String str) {
+        String preStr = str;
+        int temp1 = preStr.indexOf("<");
+        int temp2 = preStr.lastIndexOf(">");
 
         if (temp1 != -1 && temp2 != -1) {
-            str = str.substring(0, temp1) + str.substring(temp2 + 1, str.length());
+            preStr = preStr.substring(0, temp1) + preStr.substring(temp2 + 1);
         }
-        temp1 = str.indexOf("[");
-        temp2 = str.lastIndexOf("]");
+        temp1 = preStr.indexOf("[");
+        temp2 = preStr.lastIndexOf("]");
         if (temp1 != -1 && temp2 != -1) {
-            str = str.substring(0, temp1) + str.substring(temp2 + 1, str.length());
+            preStr = preStr.substring(0, temp1) + preStr.substring(temp2 + 1);
         }
 
-        ArrayList<String> result = new ArrayList<String>();
-        if (str == null || str.length() == 0) {
-            System.out.println("error: split");
+        if (preStr.length() == 0) {
+            System.err.println("error: split length 0");
             return null;
         }
-        // delete $, _, numbers at the beginning of str
-        while (str.charAt(0) == '$' || str.charAt(0) == '_' || isNum(str.charAt(0))) {
-            str = str.substring(1);
-        }
-        if (str.length() == 0) return result;
-        // replace $, _, numbers with the separator #
-        str = str.replaceAll("\\d", "#");
-        str = str.replaceAll("\\_", "#");
-        str = str.replaceAll("\\$", "#");
 
-        for (String string : str.split("#")) {
-            if (string.length() > 0) {
-                result.addAll(splitBigLetter(string));
+        HashMap<String, ArrayList<String>> result = new HashMap<>();
+        result.put("split", new ArrayList<>());
+        result.put("delimiter", new ArrayList<>());
+        result.put("case", new ArrayList<>());
+
+        Matcher matcher = delimiter.matcher(preStr);
+        int startIndex = 0;
+        int endIndex = 0;
+        while (endIndex != preStr.length()) {
+            boolean found = matcher.find();
+            endIndex = found ? matcher.start() : preStr.length();
+            String delim = found ? matcher.group() : "";
+            String sub = preStr.substring(startIndex, endIndex);
+            if (startIndex == 0) {
+                result.get("delimiter").add((endIndex == 0) ? delim : "");
             }
+            splitBigLetter(sub, delim, result);
+            startIndex = found ? matcher.end() : endIndex;
         }
+        result.put("pattern", getPattern(result));
+
         return result;
     }
 
-    // ori: index; sequence: idx
     public static boolean isSequence(String ori, String sequence) {
         int j = 0;
+        if (ori.charAt(0) != sequence.charAt(0)) {
+            return false;
+        }
         for (int i = 0; i < ori.length(); i++) {
             if (j < sequence.length() && ori.charAt(i) == sequence.charAt(j)) {
                 j++;
             }
         }
-        if (j == sequence.length()) {
-            return true;
-        }
-        return false;
+        return j == sequence.length();
     }
 
     // convert text file to ArrayList<String> line by line
@@ -121,6 +243,7 @@ public class Util {
         try {
             reader = new BufferedReader(new FileReader(file));
             String tempString;
+            String header = reader.readLine();
             while ((tempString = reader.readLine()) != null) {
                 if (!tempString.equals("")) {
                     result.add(tempString);
@@ -129,10 +252,10 @@ public class Util {
             reader.close();
         } catch (Exception e) {
             e.printStackTrace();
+            System.exit(1);
         }
         return result;
     }
-
 
     public static boolean equalOfWord(String str1, String str2) {
         str1 = str1.trim();
@@ -162,6 +285,7 @@ public class Util {
                     str1Single.equals(str2Single);
         }
     }
+
     public static boolean equalComputerExpansion(String expansion, String dicExpansion) {
         expansion = expansion.trim();
         dicExpansion = dicExpansion.trim();
@@ -185,16 +309,27 @@ public class Util {
         return 1/(1+Math.exp(-x));
     }
 
+    public static <K,V> void putHashMap(HashMap<K, V> map, K key, V value) {
+        if (!map.containsKey(key)) {
+            map.put(key, value);
+        }
+    }
+
     public static void main(String[] args) {
         // test readFile
         // test isSequence
         System.out.println(isSequence("abcd", "adc"));
 
-        // test splitBigLetter
-        System.out.println(splitBigLetter("aAbcADBAdfDDd"));
-
         // test split
-        System.out.println(split("declaringClass"));
+        String str1 = "getResult";
+        System.out.println("split " + str1);
+        System.out.println(split(str1));
+        System.out.println();
+
+        String str2 = "TLS_RSA_EXPORT1024_WITH_RC2_CBC_56_MD5";
+        System.out.println("split " + str2);
+        System.out.println(split(str2));
+        System.out.println();
 
         System.out.println(sigmoid(-1));
     }

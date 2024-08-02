@@ -2,14 +2,9 @@ package visitor;
 
 import java.util.ArrayList;
 
+import org.eclipse.jdt.core.dom.*;
+import relation.VariableInfo;
 import util.Util;
-
-import org.eclipse.jdt.core.dom.ASTVisitor;
-import org.eclipse.jdt.core.dom.Assignment;
-import org.eclipse.jdt.core.dom.CompilationUnit;
-import org.eclipse.jdt.core.dom.Expression;
-import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
-import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 
 import entity.ClassName;
 import entity.Identifier;
@@ -38,7 +33,7 @@ public class AssignVistor extends ASTVisitor {
 		
 		int line = compilationUnit.getLineNumber(node.getStartPosition());
 		AssignInfo assignInfo = new AssignInfo(line, leftIdentifiers, rightIdentifiers);
-		globalVariables.relationBases.add(assignInfo);
+		globalVariables.infos.add(assignInfo);
 		return super.visit(node);
 	}
 	
@@ -48,20 +43,28 @@ public class AssignVistor extends ASTVisitor {
 	public boolean visit(VariableDeclarationFragment node) {
 		AssignInfo assignInfo = getAssignInfo(node, compilationUnit);
 		if (assignInfo != null) {
-			globalVariables.relationBases.add(assignInfo);
+			globalVariables.infos.add(assignInfo);
+			ASTNode parent = node.getParent();
+			if (parent instanceof VariableDeclarationStatement ||
+					parent instanceof VariableDeclarationExpression ) {
+				VariableInfo variableInfo = new VariableInfo(assignInfo.line, (Variable) assignInfo.left.get(0));
+				globalVariables.infos.add(variableInfo);
+			}
 		}
 		return super.visit(node);
 	}
 	
 	public static AssignInfo getAssignInfo(VariableDeclarationFragment node, CompilationUnit compilationUnit) {
-		if (node.resolveBinding() == null) {
-			System.err.println(node.toString());
+		IVariableBinding binding = node.resolveBinding();
+		if (binding == null) {
 			return null;
 		}
-		String id = node.resolveBinding().getKey();
+		String id = binding.getKey();
 		String name = node.getName().toString();
-		ClassName type = new ClassName(node.resolveBinding().getType().getKey(), 
-				node.resolveBinding().getType().getName().toString());
+		ITypeBinding iType = binding.getType();
+		ClassName type = iType != null ?
+				new ClassName(iType.getKey(), iType.getName()) :
+				new ClassName("", "");
 		Variable variable = new Variable(id, name, type);
 		
 		ArrayList<Identifier> leftIdentifiers = new ArrayList<>();
@@ -69,26 +72,27 @@ public class AssignVistor extends ASTVisitor {
 		ArrayList<Identifier> rightIdentifiers = Util.parseExpression(node.getInitializer());
 		
 		int line = compilationUnit.getLineNumber(node.getStartPosition());
-		AssignInfo assignInfo = new AssignInfo(line, leftIdentifiers, rightIdentifiers);
-		return assignInfo;
+		return new AssignInfo(line, leftIdentifiers, rightIdentifiers);
 	}
 
 	// formal parameter lists and catch clauses
 	@Override
 	public boolean visit(SingleVariableDeclaration node) {
-		if (node.resolveBinding() == null) {
-			System.err.println(node.toString());
+		IVariableBinding binding = node.resolveBinding();
+		if (binding == null) {
 			return super.visit(node);
 		}
-		String id = node.resolveBinding().getKey();
+		String id = binding.getKey();
 		String name = node.getName().toString();
-		if (node.getType().resolveBinding() == null) {
-			System.err.println(node.toString());
+		ITypeBinding typeBinding = binding.getType();
+		if (typeBinding == null) {
 			return super.visit(node);
 		}
-		ClassName type = new ClassName(node.getType().resolveBinding().getKey(), 
-				node.getType().resolveBinding().getName());
+		ClassName type = new ClassName(typeBinding.getKey(),
+				typeBinding.getName());
+		int variableLine = compilationUnit.getLineNumber(node.getStartPosition());
 		Variable variable = new Variable(id, name, type);
+		VariableInfo variableInfo = new VariableInfo(variableLine, variable);
 		
 		ArrayList<Identifier> leftIdentifiers = new ArrayList<>();
 		leftIdentifiers.add(variable);
@@ -97,7 +101,8 @@ public class AssignVistor extends ASTVisitor {
 		int line = compilationUnit.getLineNumber(node.getStartPosition());
 		AssignInfo assignInfo = new AssignInfo(line, leftIdentifiers, rightIdentifiers);
 		
-		globalVariables.relationBases.add(assignInfo);
+		globalVariables.infos.add(assignInfo);
+		globalVariables.infos.add(variableInfo);
 		return super.visit(node);
 	}
 }

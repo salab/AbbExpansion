@@ -1,9 +1,6 @@
 package util;
 
-import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.io.PrintWriter;
+import java.io.*;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -11,15 +8,17 @@ import java.util.HashSet;
 import org.eclipse.jdt.core.dom.Expression;
 
 import entity.Identifier;
+import org.osgi.framework.Configurable;
 import visitor.SimpleVisitor;
 
 public class Util {	
 
 	public static void main(String[] args) {
 		System.out.println("sss");
-		appendFile("1");
-		appendFile("2");
-		appendFile("3");
+		StringBuilder sb = new StringBuilder();
+		appendString(sb, "1");
+		appendString(sb, "2");
+		appendString(sb, "3");
 	}
 	public static boolean isLetter(char c) {
 		if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
@@ -46,6 +45,7 @@ public class Util {
 			hashMap.put(key,arrayList);
 		}
 	}
+
 	public static ArrayList<Identifier> parseExpression(Expression expression) {
 		if (expression == null) {
 			return null;
@@ -55,27 +55,26 @@ public class Util {
 		return simpleVisitor.identifiers;
 	}
 
-	public static void appendFile(String line) {
-		FileWriter fw = null;
-		try {
-			File f=new File(Config.outFile);
+	public static void appendString(StringBuilder sb,  String line) {
+		sb.append(line);
+	}
 
-			fw = new FileWriter(f, true);
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
-		PrintWriter pw = new PrintWriter(fw);
-		pw.print(line);
-		pw.flush();
+	public static void exportToFile(StringBuilder sb) {
+		BufferedWriter fw;
 		try {
+			System.out.println("export " + Config.outFile);
+			File f = new File(Config.outFile);
+			fw = new BufferedWriter(new FileWriter(f));
+			fw.append(sb);
 			fw.flush();
-			pw.close();
 			fw.close();
 		} catch (IOException e) {
+			System.err.println("cannot export csv");
 			e.printStackTrace();
 		}
 	}
-	public static void appendFile(String line, String fileName) {
+
+	public static void appendString(String line, String fileName) {
 		FileWriter fw = null;
 		try {
 			File f=new File(fileName);
